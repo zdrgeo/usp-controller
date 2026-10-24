@@ -1,0 +1,123 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: usp-controller-data
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: usp-controller
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: usp-controller
+  template:
+    metadata:
+      labels:
+        app: usp-controller
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: controller
+          image: usp-controller:dev
+          imagePullPolicy: IfNotPresent
+          args: ["-config", "/etc/usp/config.json"]
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: USP_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: usp-controller-api
+                  key: token
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "2"
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          volumeMounts:
+            - name: config
+              mountPath: /etc/usp
+              readOnly: true
+            - name: tls
+              mountPath: /etc/usp/tls
+              readOnly: true
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: config
+          configMap:
+            name: usp-controller-config
+        - name: tls
+          secret:
+            secretName: usp-controller-mqtt-tls
+            defaultMode: 0440
+        - name: data
+          persistentVolumeClaim:
+            claimName: usp-controller-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: usp-controller
+spec:
+  type: ClusterIP
+  selector:
+    app: usp-controller
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: usp-controller-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: usp-controller
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              usp-api-client: "true"
+      ports:
+        - protocol: TCP
+          port: 8080

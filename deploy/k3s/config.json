@@ -1,0 +1,20 @@
+{
+  "endpoint_id": "os::example:controller-edge-001",
+  "client_id": "usp-controller-edge-001",
+  "listen": "0.0.0.0:8080",
+  "broker": "tls://mqtt.example.net:8883",
+  "ca_file": "/etc/usp/tls/ca.crt",
+  "cert_file": "/etc/usp/tls/tls.crt",
+  "key_file": "/etc/usp/tls/tls.key",
+  "agents": {
+    "os::example:onu-001": {
+      "topic": "usp/agents/onu-001",
+      "inbox": "usp/controllers/edge-001/onu-001"
+    }
+  },
+  "journal_path": "/data/notifications.jsonl",
+  "journal_max_bytes": 134217728,
+  "request_timeout_seconds": 30,
+  "max_pending": 256,
+  "qos": 1
+}

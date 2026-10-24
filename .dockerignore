@@ -1,0 +1,7 @@
+.git
+data
+bin
+config.json
+*.key
+*.pem
+*.crt

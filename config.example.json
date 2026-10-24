@@ -1,0 +1,18 @@
+{
+  "endpoint_id": "os::example:controller-edge-001",
+  "client_id": "usp-controller-edge-001",
+  "listen": "127.0.0.1:8080",
+  "broker": "mqtt://127.0.0.1:18883",
+  "allow_insecure_mqtt": true,
+  "agents": {
+    "os::example:onu-001": {
+      "topic": "usp/agents/onu-001",
+      "inbox": "usp/controllers/edge-001/onu-001"
+    }
+  },
+  "journal_path": "data/notifications.jsonl",
+  "journal_max_bytes": 134217728,
+  "request_timeout_seconds": 30,
+  "max_pending": 256,
+  "qos": 1
+}

@@ -1,0 +1,9 @@
+# Configure authentication separately (mTLS identity mapping or password file).
+# These usernames must match the authenticated broker identities.
+user controller-edge-001
+topic read usp/controllers/edge-001/onu-001
+topic write usp/agents/onu-001
+
+user onu-001
+topic read usp/agents/onu-001
+topic write usp/controllers/edge-001/onu-001
