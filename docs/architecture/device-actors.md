@@ -1,6 +1,7 @@
 # Device actors, digital twins, commands, and events
 
-Status: proposed; no runtime behavior or deployment topology changes in this document.
+Status: proposed architecture; phase 1 protocol extraction and Device contracts are
+implemented on the phase 1 branch. Actor execution and deployment changes remain proposed.
 Date: 2026-10-24.
 
 ## Decision and scope
@@ -359,3 +360,20 @@ implemented. Pin versions and validate the Go SDK/component combination in phase
 - [State components](https://docs.dapr.io/reference/components-reference/supported-state-stores/): component-specific transactional and actor support.
 - [Retry policies](https://docs.dapr.io/operations/resiliency/policies/retries/retries-overview/): runtime and component retries must be considered together.
 - [Pub/sub](https://docs.dapr.io/developing-applications/building-blocks/pubsub/pubsub-overview/): duplicate-tolerant event transport, subject to broker configuration.
+
+## Phase 1 implementation boundary
+
+`internal/protocol` now owns request type derivation, Record encoding, inbound
+Record/message validation, and wire-profile constants. The legacy Controller
+retains request correlation, timeout handling, journal persistence and NotifyResp
+publication. Existing exported Controller helpers delegate for compatibility.
+HTTP and MQTT adapters use protocol rules directly.
+
+`internal/device` defines the Device actor DTOs and interfaces without a Dapr
+dependency or an actor implementation. Its synchronous `DeviceRequester` contract
+is used by the existing HTTP adapter and implemented by the legacy Controller.
+Inbound Device DTOs require trusted ingress validation; their Go type alone is
+not an authentication guarantee. No durable admission or retries are enabled.
+
+Phase 2 must implement actor behavior and fake actor lifecycle tests; phase 1
+uses existing legacy integration tests plus direct protocol boundary tests.

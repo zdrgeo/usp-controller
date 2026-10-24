@@ -6,19 +6,18 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 
-	"example.com/usp-controller/internal/pb/record"
+	"example.com/usp-controller/internal/device"
 	"example.com/usp-controller/internal/pb/usp"
+	"example.com/usp-controller/internal/protocol"
 	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 )
 
 // ProtocolVersion identifies the supported USP profile.
-const ProtocolVersion = "1.5"
+const ProtocolVersion = protocol.ProtocolVersion
 
-const MaxRecord = 1 << 20
+const MaxRecord = protocol.MaxRecord
 
 var ErrBusy = errors.New("pending request capacity reached")
 var ErrUnknownAgent = errors.New("unknown agent")
@@ -51,25 +50,9 @@ func New(id string, agents map[string]string, transport Transport, journal Journ
 	return &Controller{id: id, agents: copyAgents, transport: transport, journal: journal, pending: make(map[string]*pending), capacity: capacity}
 }
 
-// RequestType derives the header from the protobuf oneof, avoiding header/body mismatches.
+// RequestType is retained for existing callers; wire rules live in protocol.
 func RequestType(req *usp.Request) (usp.Header_MsgType, error) {
-	if req == nil {
-		return 0, errors.New("request required")
-	}
-	r := req.ProtoReflect()
-	field := r.WhichOneof(r.Descriptor().Oneofs().ByName("req_type"))
-	if field == nil {
-		return 0, errors.New("request operation required")
-	}
-	name := strings.ToUpper(string(field.Name()))
-	if name == "GET_SUPPORTED_PROTOCOL" {
-		name = "GET_SUPPORTED_PROTO"
-	}
-	n, ok := usp.Header_MsgType_value[name]
-	if !ok || name == "NOTIFY" || name == "REGISTER" || name == "DEREGISTER" {
-		return 0, errors.New("unsupported controller operation")
-	}
-	return usp.Header_MsgType(n), nil
+	return protocol.RequestType(req)
 }
 
 func (c *Controller) Request(ctx context.Context, agent string, req *usp.Request) (*usp.Msg, error) {
@@ -115,79 +98,32 @@ func (c *Controller) Request(ctx context.Context, agent string, req *usp.Request
 	}
 }
 
+// Encode is retained for existing callers; wire rules live in protocol.
 func Encode(from, to string, msg *usp.Msg) ([]byte, error) {
-	b, err := proto.Marshal(msg)
-	if err != nil {
-		return nil, err
-	}
-	r := &record.Record{Version: ProtocolVersion, FromId: from, ToId: to, RecordType: &record.Record_NoSessionContext{NoSessionContext: &record.NoSessionContextRecord{Payload: b}}}
-	result, err := proto.Marshal(r)
-	if len(result) > MaxRecord {
-		return nil, errors.New("USP record exceeds limit")
-	}
-	return result, err
+	return protocol.Encode(from, to, msg)
 }
 
 func (c *Controller) Receive(ctx context.Context, payload []byte, replyTopic, sender string) error {
-	if len(payload) > MaxRecord {
-		return errors.New("oversized USP record")
-	}
-	r := new(record.Record)
-	if err := proto.Unmarshal(payload, r); err != nil {
+	inbound, err := protocol.Decode(payload, replyTopic, sender, c.id, c.agents)
+	if err != nil {
 		return err
 	}
-	topic, ok := c.agents[r.FromId]
-	if !ok || r.ToId != c.id || r.FromId != sender {
-		return errors.New("unknown sender, inbox mismatch or wrong recipient")
-	}
-	// Broker ACLs must restrict each agent to its own Controller inbox.
-	if replyTopic != topic {
-		return errors.New("reply topic does not match provisioned agent")
-	}
-	if (r.OriginatorId != "" && r.OriginatorId != r.FromId) || (r.DestinationId != "" && r.DestinationId != r.ToId) {
-		return errors.New("forwarded USP records are not supported by this profile")
-	}
-	if r.Version != ProtocolVersion {
-		return errors.New("only USP 1.5 is enabled")
-	}
-	if r.PayloadSecurity != record.Record_PLAINTEXT || len(r.MacSignature) > 0 || len(r.SenderCert) > 0 {
-		return errors.New("secured record contexts are not supported")
-	}
-	if connect := r.GetMqttConnect(); connect != nil {
-		if connect.Version != record.MQTTConnectRecord_V5 || connect.SubscribedTopic != topic {
-			return errors.New("incompatible MQTT connect record")
-		}
+	msg := inbound.Message
+	if msg == nil {
 		return nil
-	}
-	if r.GetDisconnect() != nil {
-		return nil
-	}
-	session := r.GetNoSessionContext()
-	if session == nil {
-		return errors.New("only no-session-context records are supported")
-	}
-	msg := new(usp.Msg)
-	if err := proto.Unmarshal(session.Payload, msg); err != nil {
-		return err
-	}
-	if msg.Header == nil || msg.Header.MsgId == "" || msg.Body == nil {
-		return errors.New("missing USP header, message ID or body")
 	}
 	if msg.Header.MsgType == usp.Header_NOTIFY {
 		n := msg.GetBody().GetRequest().GetNotify()
-		if n == nil || n.Notification == nil {
-			return errors.New("invalid Notify body")
-		}
 		b, err := protojson.Marshal(msg)
 		if err != nil {
 			return err
 		}
-		if err := c.journal.Append(r.FromId, b); err != nil {
+		if err := c.journal.Append(inbound.Sender, b); err != nil {
 			return fmt.Errorf("persist notification: %w", err)
 		}
 		if n.SendResp {
 			response := &usp.Msg{Header: &usp.Header{MsgId: msg.Header.MsgId, MsgType: usp.Header_NOTIFY_RESP}, Body: &usp.Body{MsgBody: &usp.Body_Response{Response: &usp.Response{RespType: &usp.Response_NotifyResp{NotifyResp: &usp.NotifyResp{SubscriptionId: n.SubscriptionId}}}}}}
-			b, err := Encode(c.id, r.FromId, response)
+			b, err := Encode(c.id, inbound.Sender, response)
 			if err != nil {
 				return err
 			}
@@ -195,16 +131,13 @@ func (c *Controller) Receive(ctx context.Context, payload []byte, replyTopic, se
 		}
 		return nil
 	}
-	if err := validateResponse(msg); err != nil {
-		return err
-	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	p, ok := c.pending[msg.Header.MsgId]
 	if !ok {
 		return nil
 	} // late/duplicate responses
-	if p.agent != r.FromId {
+	if p.agent != inbound.Sender {
 		return errors.New("response sender does not match request")
 	}
 	if msg.Header.MsgType != p.expected && msg.Header.MsgType != usp.Header_ERROR {
@@ -217,27 +150,5 @@ func (c *Controller) Receive(ctx context.Context, payload []byte, replyTopic, se
 	return nil
 }
 
-func validateResponse(msg *usp.Msg) error {
-	if msg.Header.MsgType == usp.Header_ERROR {
-		if msg.Body.GetError() == nil {
-			return errors.New("invalid Error body")
-		}
-		return nil
-	}
-	response := msg.Body.GetResponse()
-	if response == nil {
-		return errors.New("expected Response body")
-	}
-	r := response.ProtoReflect()
-	f := r.WhichOneof(r.Descriptor().Oneofs().ByName("resp_type"))
-	if f == nil {
-		return errors.New("missing response operation")
-	}
-	name := strings.ToUpper(string(f.Name()))
-	name = strings.Replace(name, "GET_SUPPORTED_PROTOCOL_RESP", "GET_SUPPORTED_PROTO_RESP", 1)
-	n, ok := usp.Header_MsgType_value[name]
-	if !ok || usp.Header_MsgType(n) != msg.Header.MsgType {
-		return errors.New("response header/body mismatch")
-	}
-	return nil
-}
+// The legacy controller continues to implement the synchronous Device boundary.
+var _ device.DeviceRequester = (*Controller)(nil)

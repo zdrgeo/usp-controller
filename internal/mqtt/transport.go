@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"example.com/usp-controller/internal/config"
-	"example.com/usp-controller/internal/controller"
 	"example.com/usp-controller/internal/pb/record"
+	"example.com/usp-controller/internal/protocol"
 	"github.com/eclipse/paho.golang/autopaho"
 	"github.com/eclipse/paho.golang/paho"
 	"google.golang.org/protobuf/proto"
@@ -105,7 +105,7 @@ func (t *Transport) Start(ctx context.Context, receive Receiver) error {
 			if p.Properties == nil {
 				p.Properties = &paho.ConnectProperties{}
 			}
-			max := uint32(controller.MaxRecord + 65536)
+			max := uint32(protocol.MaxRecord + 65536)
 			p.Properties.MaximumPacketSize = &max
 			return p, nil
 		},
@@ -140,7 +140,7 @@ func (t *Transport) Start(ctx context.Context, receive Receiver) error {
 			func(pr paho.PublishReceived) (bool, error) {
 				p := pr.Packet
 				sender, ok := t.inboxes[p.Topic]
-				if !ok || p.Retain || len(p.Payload) > controller.MaxRecord || p.Properties == nil || (p.Properties.ContentType != "usp.msg" && p.Properties.ContentType != "application/vnd.bbf.usp.msg") {
+				if !ok || p.Retain || len(p.Payload) > protocol.MaxRecord || p.Properties == nil || (p.Properties.ContentType != "usp.msg" && p.Properties.ContentType != "application/vnd.bbf.usp.msg") {
 					return true, nil
 				}
 				m := incoming{payload: append([]byte(nil), p.Payload...), reply: p.Properties.ResponseTopic, sender: sender}
@@ -208,7 +208,7 @@ func (t *Transport) announce(ctx context.Context, cm *autopaho.ConnectionManager
 	// Subscriptions are ready before announcements, so immediate notifications
 	// triggered by a Connect record can be acknowledged.
 	for id, a := range t.cfg.Agents {
-		r := &record.Record{Version: controller.ProtocolVersion, FromId: t.cfg.EndpointID, ToId: id, RecordType: &record.Record_MqttConnect{MqttConnect: &record.MQTTConnectRecord{Version: record.MQTTConnectRecord_V5, SubscribedTopic: a.Inbox}}}
+		r := &record.Record{Version: protocol.ProtocolVersion, FromId: t.cfg.EndpointID, ToId: id, RecordType: &record.Record_MqttConnect{MqttConnect: &record.MQTTConnectRecord{Version: record.MQTTConnectRecord_V5, SubscribedTopic: a.Inbox}}}
 		b, err := proto.Marshal(r)
 		if err != nil {
 			return err

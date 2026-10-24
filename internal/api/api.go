@@ -11,13 +11,14 @@ import (
 	"time"
 
 	"example.com/usp-controller/internal/controller"
+	"example.com/usp-controller/internal/device"
 	"example.com/usp-controller/internal/pb/usp"
+	"example.com/usp-controller/internal/protocol"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-type Requester interface {
-	Request(context.Context, string, *usp.Request) (*usp.Msg, error)
-}
+// Requester preserves the existing API contract under the Device boundary.
+type Requester = device.DeviceRequester
 
 func Handler(c Requester, ready func() bool, token string, timeout time.Duration) http.Handler {
 	mux := http.NewServeMux()
@@ -39,7 +40,7 @@ func Handler(c Requester, ready func() bool, token string, timeout time.Duration
 			http.Error(w, "controller not ready", 503)
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, controller.MaxRecord)
+		r.Body = http.MaxBytesReader(w, r.Body, protocol.MaxRecord)
 		var input struct {
 			AgentID string          `json:"agent_id"`
 			Request json.RawMessage `json:"request"`
@@ -59,7 +60,7 @@ func Handler(c Requester, ready func() bool, token string, timeout time.Duration
 			http.Error(w, "invalid USP request: "+err.Error(), 400)
 			return
 		}
-		if _, err := controller.RequestType(req); err != nil {
+		if _, err := protocol.RequestType(req); err != nil {
 			http.Error(w, err.Error(), 400)
 			return
 		}
