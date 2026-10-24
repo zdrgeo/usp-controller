@@ -170,3 +170,9 @@ USP 1.5 routing fields are accepted only when absent or equal to the direct send
 ## Storage interface design
 
 The proposed [Command and Event store contracts](docs/storage-contracts.md) and `internal/storage` interfaces define backend-independent durability, deduplication, command recovery, delivery leases, and multi-process capabilities. No backend is selected or integrated yet; the current Journal remains active.
+
+The alternative [Device Actor architecture proposal](docs/architecture/device-actors.md)
+defines per-device digital twins, command queues and event handling using Dapr
+Actors, without shared SQL command claiming. It includes conceptual actor
+interfaces, state keys, simpler delivery policies, and a phased migration from the
+current runtime. It is a design proposal, not an implemented deployment mode.
