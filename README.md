@@ -176,3 +176,13 @@ defines per-device digital twins, command queues and event handling using Dapr
 Actors, without shared SQL command claiming. It includes conceptual actor
 interfaces, state keys, simpler delivery policies, and a phased migration from the
 current runtime. It is a design proposal, not an implemented deployment mode.
+
+
+## Device Actor migration progress
+
+Phase 2 adds an opt-in `internal/deviceactor` implementation with persisted twin
+state, idempotent receipts, queued-command state and maintenance reminders. It has
+no command transport and cannot dispatch commands. The production entry point
+still uses the legacy Controller and JSONL journal; no Dapr service is required to
+run it. See the [phase 2 scope and limitations](docs/architecture/device-actors.md#phase-2-implementation-and-validation-scope)
+for the private callback handler, Dapr HTTP adapter and test coverage.

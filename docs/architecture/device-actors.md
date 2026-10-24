@@ -1,7 +1,8 @@
 # Device actors, digital twins, commands, and events
 
-Status: proposed architecture; phase 1 protocol extraction and Device contracts are
-implemented on the phase 1 branch. Actor execution and deployment changes remain proposed.
+Status: proposed architecture; phases 1 and 2 provide protocol extraction, Device
+contracts and an opt-in actor state/twin implementation. Production registration,
+command dispatch, protocol ingestion and deployment changes remain disabled.
 Date: 2026-10-24.
 
 ## Decision and scope
@@ -377,3 +378,87 @@ not an authentication guarantee. No durable admission or retries are enabled.
 
 Phase 2 must implement actor behavior and fake actor lifecycle tests; phase 1
 uses existing legacy integration tests plus direct protocol boundary tests.
+
+## Phase 2 implementation and validation scope
+
+`internal/deviceactor` implements `device.DeviceActor` as a dormant state owner.
+The production `cmd/usp-controller` wiring, configuration, API and manifests are
+unchanged. There is no transport or event publisher dependency in this actor, no
+Dapr SDK dependency, and no automatic command dispatch. `Tick` only expires queued
+commands; `HandleResponse` and `HandleNotify` return `ErrDisabled`, so callers
+cannot mistake this prototype for a durable notification acknowledgment path.
+
+Implemented behavior:
+
+- Desired patches with revision checks, removals and persistent original receipts.
+- Trusted reported observations with identity checks, per-parameter receipt times,
+  stale-observation suppression and freshness-aware convergence on reads.
+- Per-device request IDs shared across mutation kinds; conflicting reuse fails.
+- Queued command admission, canonical protobuf storage, duplicate submission,
+  queued-only cancellation and deadline expiry. No operation is sent.
+- Reminder provisioning before admission, repair during activation and retries,
+  deterministic initial staggering, and idempotent maintenance callbacks.
+- No mutable state cache: every operation reloads committed data, including after
+  an ambiguous write response. Returned maps and protobufs are detached.
+
+### Deliberate bounded prototype representation
+
+Phase 2 uses one versioned `snapshot-v1` actor key, atomically containing twin,
+receipts, queue and command records. This replaces the proposed multi-key layout
+for the prototype only: defaults are 1 MiB serialized state, 1,024 receipts,
+64 retained commands, and 1,024 desired/reported parameters each. The snapshot is
+reloaded on every turn. There is no receipt or command pruning yet; exhaustion
+rejects admission rather than evicting deduplication identities. Cancelled/expired
+commands still count toward retention capacity. A backend-specific safe item size
+must be configured before any deployed pilot.
+
+Before phase 3/production, benchmark write amplification and migrate to the
+proposed indexed multi-key layout if required. Any such migration must preserve
+atomic twin/receipt writes and command identities. Do not feed high-volume
+telemetry into this bounded receipt store. `Report` is a trusted adapter method,
+not a public endpoint or a replacement for the later atomic Notify inbox/outbox.
+ReceivedAt comes from validated ingress; source ordering and data-model validation
+remain adapter responsibilities. No desired-state write is executed.
+
+### Dapr adapter and private callback handler
+
+`NewDaprBackend` targets the documented Dapr **1.19 HTTP actor API**, including
+reminder listing. Pin and qualify 1.19.x and the chosen transactional actor-state
+component before a live deployment. An older sidecar without reminder listing
+fails admission rather than guessing that a reminder is missing. No Go SDK is
+required. State is saved with a single actor-state transaction, without TTL.
+Scheduler errors block new admission; an existing reminder is inspected rather
+than recreated on every update. Period/TTL mismatch fails closed for explicit
+operator repair. HTTP calls have bounded timeouts and do not automatically retry.
+
+`NewHost` exposes a private, app-token-authenticated callback handler for a fixed
+provisioned actor set. It supports Dapr configuration/deactivation, GetTwin,
+SetDesired, Report, explicit Activate and the maintenance reminder callback.
+Reentrancy is disabled. Command and USP notification HTTP methods are deliberately
+not exposed. Objects contain only dependencies and local locks; no durable state
+is cached, including across activation IDs. Inventory bounds local object count.
+A deployment must let Dapr serialize actor calls across hosts: the local mutex is
+not a distributed lock. Never call the backend from an independent worker.
+
+An embedding test host supplies each actor's identity, backend and options, then
+mounts `NewHost` on a private listener whose token matches Dapr's app API token.
+The Dapr API token passed to `NewDaprBackend` is a separate credential. Neither
+handler nor listener is installed by the production main. Inventory maintenance
+must periodically invoke Activate to repair missing reminders for inactive actors;
+that fleet loop is not yet wired into production.
+
+### Tests and remaining rollout gates
+
+Unit and HTTP contract tests cover reactivation, original receipt replay after
+later revisions, conflicting payloads, stale revisions, concurrent local turns,
+reminder failure/repair, failed and ambiguous commit, cross-device isolation,
+corrupt/schema-mismatched state, freshness, out-of-order reports, detached values,
+queue expiry/cancellation, capacity, callback authentication and disabled methods.
+A fake Dapr HTTP server verifies paths, transaction shape, API token, reminder
+staggering, no reminder reset on retry and read-back after a lost commit response.
+
+These tests do not prove live Dapr placement, Scheduler availability, component
+replication or failover. A Dapr binary is not installed in the development
+environment used for this phase; a live pinned-runtime/component smoke test is
+still required before mounting the host in a pilot. Legacy regression tests remain
+the gate for the unchanged production default.
