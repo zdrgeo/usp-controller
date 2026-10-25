@@ -4,12 +4,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"strings"
 )
 
+type ActorCanary struct {
+	Enabled        bool     `json:"enabled"`
+	Tenant         string   `json:"tenant"`
+	Devices        []string `json:"devices"`
+	DaprURL        string   `json:"dapr_url"`
+	CallbackListen string   `json:"callback_listen"`
+	LockPath       string   `json:"lock_path"`
+}
+
 type Config struct {
+	ActorCanary           *ActorCanary     `json:"actor_canary,omitempty"`
 	EndpointID            string           `json:"endpoint_id"`
 	Listen                string           `json:"listen"`
 	Broker                string           `json:"broker"`
@@ -81,6 +92,27 @@ func (c Config) Validate() error {
 				return fmt.Errorf("agent topics and inboxes must be valid and unique")
 			}
 			seen[topic] = true
+		}
+	}
+	if a := c.ActorCanary; a != nil && a.Enabled {
+		if a.Tenant == "" || len(a.Devices) == 0 || a.LockPath == "" {
+			return fmt.Errorf("actor canary requires tenant, explicit devices and lock_path")
+		}
+		host, port, err := net.SplitHostPort(a.CallbackListen)
+		ip := net.ParseIP(host)
+		if err != nil || port == "" || port == "0" || ip == nil || !ip.IsLoopback() || a.CallbackListen == c.Listen {
+			return fmt.Errorf("actor callback must use a distinct explicit loopback listener")
+		}
+		sidecar, err := url.Parse(a.DaprURL)
+		if err != nil || sidecar.Scheme != "http" || sidecar.User != nil || sidecar.RawQuery != "" || sidecar.Fragment != "" || sidecar.Path != "" || net.ParseIP(sidecar.Hostname()) == nil || !net.ParseIP(sidecar.Hostname()).IsLoopback() {
+			return fmt.Errorf("single-host dapr_url must be an HTTP loopback origin")
+		}
+		selected := map[string]bool{}
+		for _, id := range a.Devices {
+			if _, ok := c.Agents[id]; !ok || selected[id] {
+				return fmt.Errorf("canary devices must be unique provisioned endpoint IDs")
+			}
+			selected[id] = true
 		}
 	}
 	return nil

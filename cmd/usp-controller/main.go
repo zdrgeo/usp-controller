@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,8 +14,10 @@ import (
 	"time"
 
 	"example.com/usp-controller/internal/api"
+	"example.com/usp-controller/internal/canary"
 	"example.com/usp-controller/internal/config"
 	"example.com/usp-controller/internal/controller"
+	"example.com/usp-controller/internal/deviceapi"
 	"example.com/usp-controller/internal/journal"
 	"example.com/usp-controller/internal/mqtt"
 )
@@ -51,13 +54,57 @@ func run() error {
 		agents[id] = a.Topic
 	}
 	c := controller.New(cfg.EndpointID, agents, transport, j, cfg.MaxPending)
-	if err := transport.Start(ctx, c.Receive); err != nil {
+	var requester api.Requester = c
+	var receive mqtt.Receiver = c.Receive
+	var actorRuntime *canary.Runtime
+	var callback *http.Server
+	serverErrors := make(chan error, 2)
+	if cfg.ActorCanary != nil && cfg.ActorCanary.Enabled {
+		actorRuntime, err = canary.New(cfg, transport, c, os.Getenv("DAPR_APP_TOKEN"), os.Getenv("DAPR_API_TOKEN"))
+		if err != nil {
+			return err
+		}
+		defer actorRuntime.Close()
+		listener, err := net.Listen("tcp", cfg.ActorCanary.CallbackListen)
+		if err != nil {
+			return err
+		}
+		callback = &http.Server{Handler: actorRuntime.Host, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+		defer callback.Close()
+		go func() { serverErrors <- callback.Serve(listener) }()
+		requester = actorRuntime
+		receive = actorRuntime.Receive
+		// Repair existing actors' reminders through Dapr turns after sidecar startup.
+		go func() {
+			timer := time.NewTicker(30 * time.Second)
+			defer timer.Stop()
+			for {
+				for _, id := range actorRuntime.Devices {
+					if ctx.Err() != nil {
+						return
+					}
+					if _, err := actorRuntime.Client.Invoke(ctx, id, "Activate", nil); err != nil {
+						slog.Warn("actor reminder repair", "device", id.AgentID, "error", err)
+					}
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-timer.C:
+				}
+			}
+		}()
+	}
+	if err := transport.Start(ctx, receive); err != nil {
 		return err
 	}
 	timeout := time.Duration(cfg.RequestTimeoutSeconds) * time.Second
 	ready := func() bool { return transport.Ready() && j.Healthy() }
-	server := &http.Server{Addr: cfg.Listen, Handler: api.Handler(c, ready, token, timeout), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: timeout + 15*time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
-	serverErrors := make(chan error, 1)
+	var handler http.Handler = api.Handler(requester, ready, token, timeout)
+	if actorRuntime != nil {
+		handler = deviceapi.Timeout(deviceapi.Handler(handler, actorRuntime.Client, actorRuntime.Devices, token))
+	}
+	server := &http.Server{Addr: cfg.Listen, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: timeout + 15*time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	go func() { serverErrors <- server.ListenAndServe() }()
 	slog.Info("USP Controller started", "endpoint", cfg.EndpointID, "listen", cfg.Listen, "agents", len(cfg.Agents))
 	select {
@@ -70,6 +117,12 @@ func run() error {
 	if shutdownErr := server.Shutdown(shutdownCtx); shutdownErr != nil {
 		server.Close()
 		slog.Warn("HTTP shutdown", "error", shutdownErr)
+	}
+	if callback != nil {
+		if shutdownErr := callback.Shutdown(shutdownCtx); shutdownErr != nil {
+			callback.Close()
+			slog.Warn("actor callback shutdown", "error", shutdownErr)
+		}
 	}
 	closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer closeCancel()

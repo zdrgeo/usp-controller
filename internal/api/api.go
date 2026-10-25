@@ -70,6 +70,8 @@ func Handler(c Requester, ready func() bool, token string, timeout time.Duration
 		if err != nil {
 			status := http.StatusBadGateway
 			switch {
+			case errors.Is(err, controller.ErrActorManaged):
+				status = http.StatusConflict
 			case errors.Is(err, controller.ErrUnknownAgent):
 				status = 404
 			case errors.Is(err, controller.ErrBusy):

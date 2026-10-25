@@ -74,7 +74,7 @@ func Decode(payload []byte, replyTopic, sender, controllerID string, routes map[
 		if n == nil || n.Notification == nil {
 			return nil, errors.New("invalid Notify body")
 		}
-	} else if err := validateResponse(msg); err != nil {
+	} else if err := ValidateResponse(msg); err != nil {
 		return nil, err
 	}
 	return &Inbound{Sender: r.FromId, Message: msg}, nil
@@ -115,7 +115,11 @@ func Encode(from, to string, msg *usp.Msg) ([]byte, error) {
 	return result, err
 }
 
-func validateResponse(msg *usp.Msg) error {
+// ValidateResponse checks header/body shape, not request correlation or success.
+func ValidateResponse(msg *usp.Msg) error {
+	if msg == nil || msg.Header == nil || msg.Header.MsgId == "" || msg.Body == nil {
+		return errors.New("missing USP header, message ID or body")
+	}
 	if msg.Header.MsgType == usp.Header_ERROR {
 		if msg.Body.GetError() == nil {
 			return errors.New("invalid Error body")

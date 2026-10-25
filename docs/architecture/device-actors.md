@@ -1,8 +1,8 @@
 # Device actors, digital twins, commands, and events
 
-Status: proposed architecture; phases 1 and 2 provide protocol extraction, Device
-contracts and an opt-in actor state/twin implementation. Production registration,
-command dispatch, protocol ingestion and deployment changes remain disabled.
+Status: proposed architecture with phases 1–3 implemented behind explicit opt-in.
+Legacy remains the default. Single-host canary dispatch is available; Operate,
+actor notification ingestion/export and desired-state reconciliation remain disabled.
 Date: 2026-10-24.
 
 ## Decision and scope
@@ -462,3 +462,13 @@ replication or failover. A Dapr binary is not installed in the development
 environment used for this phase; a live pinned-runtime/component smoke test is
 still required before mounting the host in a pilot. Legacy regression tests remain
 the gate for the unchanged production default.
+
+## Phase 3 implementation
+
+The [single-host canary guide](device-actor-canary.md) defines opt-in runtime
+configuration, the asynchronous v2 command API, dispatch semantics, supported
+operations and rollback limits. Phase-2 descriptions above record the dormant
+baseline; phase 3 adds `NewExecuting` and mounts a private Dapr callback listener
+only for an explicit configured cohort. `New` remains non-dispatching. All canary
+admission, maintenance and response calls go through Dapr invocation; there is
+no direct state access from independent workers and no shared SQL claiming.

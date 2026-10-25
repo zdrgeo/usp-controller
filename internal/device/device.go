@@ -27,8 +27,8 @@ type DeviceRequester interface {
 // DeviceActor describes the proposed domain boundary, not Dapr SDK handlers.
 // Identity is supplied by authenticated routing. Mutable DTOs must be copied on
 // admission; callers must not mutate protobufs/maps concurrently with a call.
-// The opt-in phase-2 implementation lives in internal/deviceactor; the legacy
-// runtime does not register or invoke it.
+// The opt-in implementation lives in internal/deviceactor; legacy mode does
+// not register or invoke it.
 type DeviceActor interface {
 	GetTwin(context.Context) (DeviceTwin, error)
 	SetDesired(context.Context, SetDesiredRequest) (DesiredReceipt, error)

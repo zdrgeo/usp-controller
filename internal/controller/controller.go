@@ -19,6 +19,8 @@ const ProtocolVersion = protocol.ProtocolVersion
 
 const MaxRecord = protocol.MaxRecord
 
+var ErrActorManaged = errors.New("device uses asynchronous actor command API")
+
 var ErrBusy = errors.New("pending request capacity reached")
 var ErrUnknownAgent = errors.New("unknown agent")
 

@@ -180,9 +180,11 @@ current runtime. It is a design proposal, not an implemented deployment mode.
 
 ## Device Actor migration progress
 
-Phase 2 adds an opt-in `internal/deviceactor` implementation with persisted twin
-state, idempotent receipts, queued-command state and maintenance reminders. It has
-no command transport and cannot dispatch commands. The production entry point
-still uses the legacy Controller and JSONL journal; no Dapr service is required to
-run it. See the [phase 2 scope and limitations](docs/architecture/device-actors.md#phase-2-implementation-and-validation-scope)
-for the private callback handler, Dapr HTTP adapter and test coverage.
+The default runtime remains the legacy Controller and JSONL journal. Phase 3 adds
+an opt-in, single-host Device Actor canary for an explicit device allowlist, with
+an asynchronous command API, durable admission, bounded dispatch and response
+correlation. Dapr is required only for that mode. `Operate`, desired-state
+reconciliation and actor notification export remain disabled.
+
+See the [canary configuration, API and cutover guide](docs/architecture/device-actor-canary.md)
+and [architecture proposal](docs/architecture/device-actors.md) before enabling it.

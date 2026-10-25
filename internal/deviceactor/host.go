@@ -9,11 +9,13 @@ import (
 	"strings"
 
 	"example.com/usp-controller/internal/device"
+	"example.com/usp-controller/internal/pb/usp"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // Host is an opt-in Dapr callback handler for a fixed provisioned device set.
-// The production main does not mount it. It deliberately exposes only phase-2
-// twin methods; command/Notify HTTP ingress remains a later migration phase.
+// The production main mounts it only for explicit actor canaries. Command
+// methods are available only for execution-enabled actors; Notify stays legacy.
 // Put it on a private app channel; token must match Dapr's app API token.
 type Host struct {
 	actors  map[string]*Actor
@@ -78,6 +80,64 @@ func (h *Host) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if len(parts) != 5 {
 		http.NotFound(w, r)
 		return
+	}
+	if a.transport != nil {
+		switch parts[4] {
+		case "EnqueueCommand":
+			var input CommandInput
+			if !h.decode(w, r, &input) {
+				return
+			}
+			request, err := input.Domain()
+			if err != nil {
+				respond(w, nil, err)
+				return
+			}
+			receipt, err := a.EnqueueCommand(r.Context(), request)
+			respond(w, CommandOutput{RequestID: receipt.ID, Revision: receipt.Revision, State: receipt.State}, err)
+			return
+		case "GetCommand":
+			var input CommandLookup
+			if !h.decode(w, r, &input) {
+				return
+			}
+			command, err := a.GetCommand(r.Context(), input.RequestID)
+			if err != nil {
+				respond(w, nil, err)
+				return
+			}
+			out, err := commandOutput(command)
+			respond(w, out, err)
+			return
+		case "CancelCommand":
+			var input CommandCancel
+			if !h.decode(w, r, &input) {
+				return
+			}
+			command, err := a.CancelCommand(r.Context(), device.CancelCommandRequest{ID: input.RequestID, ExpectedRevision: input.ExpectedRevision})
+			if err != nil {
+				respond(w, nil, err)
+				return
+			}
+			out, err := commandOutput(command)
+			respond(w, out, err)
+			return
+		case "HandleResponse":
+			var input ResponseInput
+			if !h.decode(w, r, &input) {
+				return
+			}
+			msg := new(usp.Msg)
+			if err := protojson.Unmarshal(input.Message, msg); err != nil {
+				respond(w, nil, ErrInvalid)
+				return
+			}
+			respond(w, nil, a.HandleResponse(r.Context(), device.DeviceResponse{Identity: input.Identity, Message: msg}))
+			return
+		case "Tick":
+			respond(w, nil, a.Tick(r.Context()))
+			return
+		}
 	}
 	switch parts[4] {
 	case "GetTwin":

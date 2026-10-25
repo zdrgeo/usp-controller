@@ -1,5 +1,4 @@
-// Package deviceactor implements the dormant phase-2 Device actor. It has no
-// transport or event publisher: accepting work cannot execute device operations.
+// Package deviceactor implements Device state and opt-in single-host command execution.
 package deviceactor
 
 import (
@@ -50,10 +49,11 @@ func DefaultOptions() Options {
 }
 
 type Actor struct {
-	mu      sync.Mutex
-	id      device.DeviceIdentity
-	backend Backend
-	opts    Options
+	mu        sync.Mutex
+	id        device.DeviceIdentity
+	backend   Backend
+	opts      Options
+	transport device.DeviceTransport
 }
 
 func New(id device.DeviceIdentity, backend Backend, opts Options) (*Actor, error) {
@@ -68,10 +68,12 @@ type receipt struct {
 	Revision          uint64
 }
 type storedCommand struct {
-	Receipt  device.CommandReceipt
-	Payload  []byte // deterministic protobuf, never encoding/json of a protobuf oneof
-	Deadline time.Time
-	Reason   string
+	Receipt   device.CommandReceipt
+	Payload   []byte // deterministic protobuf, never encoding/json of a protobuf oneof
+	Deadline  time.Time
+	Reason    string
+	MessageID string
+	Result    []byte
 }
 type snapshot struct {
 	Schema                            int
@@ -126,8 +128,12 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 				return nil, fmt.Errorf("queued command missing from index")
 			}
 		case device.CommandCancelled, device.CommandExpired:
+		case device.CommandAttempting, device.CommandAwaitingResponse, device.CommandUnknown, device.CommandSucceeded, device.CommandFailed:
+			if c.MessageID == "" {
+				return nil, fmt.Errorf("missing publish identity")
+			}
 		default:
-			return nil, fmt.Errorf("unsupported command state with dispatch disabled")
+			return nil, fmt.Errorf("unsupported command state")
 		}
 	}
 	for id, r := range s.Receipts {
@@ -201,10 +207,14 @@ func (a *Actor) GetTwin(ctx context.Context) (device.DeviceTwin, error) {
 		}
 	}
 	for id, c := range s.Commands {
-		if c.Receipt.State == device.CommandQueued {
+		if c.Receipt.State == device.CommandUnknown {
+			t.Unknown = append(t.Unknown, id)
+		}
+		if c.Receipt.State == device.CommandQueued || c.Receipt.State == device.CommandAttempting || c.Receipt.State == device.CommandAwaitingResponse {
 			t.Pending = append(t.Pending, id)
 		}
 	}
+	sort.Slice(t.Unknown, func(i, j int) bool { return t.Unknown[i] < t.Unknown[j] })
 	sort.Slice(t.Pending, func(i, j int) bool { return t.Pending[i] < t.Pending[j] })
 	return t, nil // all maps came from a fresh decode; no state is cached
 }
@@ -345,6 +355,17 @@ func (a *Actor) EnqueueCommand(ctx context.Context, r device.CommandRequest) (de
 	if _, err := protocol.RequestType(r.Request); err != nil {
 		return zero, fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
+	if a.transport != nil && r.Request.GetOperate() != nil {
+		return zero, fmt.Errorf("%w: Operate requires completion ingestion (phase 4)", ErrInvalid)
+	}
+	if a.transport != nil {
+		kind, _ := protocol.RequestType(r.Request)
+		msg := &usp.Msg{Header: &usp.Header{MsgId: strings.Repeat("0", 32), MsgType: kind}, Body: &usp.Body{MsgBody: &usp.Body_Request{Request: r.Request}}}
+		if _, err := protocol.Encode(a.id.ControllerID, a.id.AgentID, msg); err != nil {
+			return zero, fmt.Errorf("%w: %v", ErrInvalid, err)
+		}
+	}
+
 	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(r.Request)
 	if err != nil {
 		return zero, err
@@ -401,7 +422,7 @@ func (a *Actor) GetCommand(ctx context.Context, id device.RequestID) (device.Dev
 	if err = proto.Unmarshal(c.Payload, req); err != nil {
 		return device.DeviceCommand{}, err
 	}
-	return device.DeviceCommand{CommandReceipt: c.Receipt, Request: req, Deadline: c.Deadline, Reason: c.Reason}, nil
+	return commandView(c, req)
 }
 func (a *Actor) CancelCommand(ctx context.Context, r device.CancelCommandRequest) (device.DeviceCommand, error) {
 	a.mu.Lock()
@@ -462,35 +483,6 @@ func (a *Actor) Activate(ctx context.Context) error {
 	return a.backend.EnsureReminder(ctx)
 }
 
-// Tick only expires queued work. It cannot publish, reconcile writes, or export.
-func (a *Actor) Tick(ctx context.Context) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	s, err := a.load(ctx)
-	if err != nil {
-		return err
-	}
-	changed := false
-	now := a.opts.Now()
-	for id, c := range s.Commands {
-		if c.Receipt.State == device.CommandQueued && !now.Before(c.Deadline) {
-			if c.Receipt.Revision == math.MaxUint64 {
-				return ErrCapacity
-			}
-			c.Receipt.State = device.CommandExpired
-			c.Receipt.Revision++
-			c.Reason = "deadline reached with dispatch disabled"
-			s.Commands[id] = c
-			changed = true
-		}
-	}
-	if !changed {
-		return nil
-	}
-	a.compactQueue(s)
-	return a.save(ctx, s)
-}
-func (*Actor) HandleResponse(context.Context, device.DeviceResponse) error { return ErrDisabled }
 func (*Actor) HandleNotify(context.Context, device.DeviceNotification) (device.NotifyReceipt, error) {
 	return device.NotifyReceipt{}, ErrDisabled
 }
