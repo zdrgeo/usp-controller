@@ -29,10 +29,16 @@ func NewExecuting(id device.DeviceIdentity, b Backend, o Options, t device.Devic
 	return a, nil
 }
 func commandView(c storedCommand, req *usp.Request) (device.DeviceCommand, error) {
-	out := device.DeviceCommand{CommandReceipt: c.Receipt, Request: req, Deadline: c.Deadline, Reason: c.Reason, MessageID: c.MessageID, AttemptID: c.MessageID}
+	out := device.DeviceCommand{CommandReceipt: c.Receipt, Request: req, Deadline: c.Deadline, Reason: c.Reason, MessageID: c.MessageID, AttemptID: c.MessageID, OperationKey: c.OperationKey}
 	if len(c.Result) > 0 {
 		out.Result = new(usp.Msg)
 		if err := proto.Unmarshal(c.Result, out.Result); err != nil {
+			return device.DeviceCommand{}, err
+		}
+	}
+	if len(c.Completion) > 0 {
+		out.Completion = new(usp.Msg)
+		if err := proto.Unmarshal(c.Completion, out.Completion); err != nil {
 			return device.DeviceCommand{}, err
 		}
 	}
@@ -61,7 +67,7 @@ func (a *Actor) Tick(ctx context.Context) error {
 	changed := false
 	for id, c := range s.Commands {
 		state := c.Receipt.State
-		if state == device.CommandAttempting || (state == device.CommandAwaitingResponse && !now.Before(c.Deadline)) {
+		if state == device.CommandAttempting || ((state == device.CommandAwaitingResponse || state == device.CommandAwaitingCompletion) && !now.Before(c.Deadline)) {
 			if err = transition(&c, device.CommandUnknown, "interrupted publish or response deadline; not replayed"); err != nil {
 				return err
 			}
@@ -81,11 +87,14 @@ func (a *Actor) Tick(ctx context.Context) error {
 			return err
 		}
 	}
+	if err = a.exportOne(ctx, s); err != nil {
+		return err
+	}
 	if a.transport == nil || len(s.Queue) == 0 {
 		return nil
 	}
 	for _, c := range s.Commands {
-		if c.Receipt.State == device.CommandUnknown || c.Receipt.State == device.CommandAwaitingResponse {
+		if c.Receipt.State == device.CommandUnknown || c.Receipt.State == device.CommandAwaitingResponse || c.Receipt.State == device.CommandAwaitingCompletion {
 			return nil
 		}
 	}
@@ -98,8 +107,8 @@ func (a *Actor) Tick(ctx context.Context) error {
 	if err = proto.Unmarshal(c.Payload, request); err != nil {
 		return err
 	}
-	if request.GetOperate() != nil {
-		return fmt.Errorf("%w: queued Operate requires phase 4", ErrDisabled)
+	if op := request.GetOperate(); op != nil && !concreteOperation(op.Command) {
+		return ErrInvalid
 	}
 	kind, err := protocol.RequestType(request)
 	if err != nil {
@@ -110,6 +119,11 @@ func (a *Actor) Tick(ctx context.Context) error {
 		return err
 	}
 	c.MessageID = hex.EncodeToString(random)
+	if op := request.GetOperate(); op != nil {
+		c.OperationKey = c.MessageID
+		op.CommandKey = c.OperationKey
+		op.SendResp = true
+	}
 	msg := &usp.Msg{Header: &usp.Header{MsgId: c.MessageID, MsgType: kind}, Body: &usp.Body{MsgBody: &usp.Body_Request{Request: request}}}
 	// Validate encoding and size before committing the uncertainty boundary.
 	if _, err = protocol.Encode(a.id.ControllerID, a.id.AgentID, msg); err != nil {
@@ -189,17 +203,36 @@ func (a *Actor) HandleResponse(ctx context.Context, r device.DeviceResponse) err
 			}
 			return ErrConflict
 		}
-		switch c.Receipt.State {
-		case device.CommandAttempting, device.CommandAwaitingResponse, device.CommandUnknown:
-		default:
-			return ErrConflict
-		}
 		state := device.CommandSucceeded
 		reason := "matching USP response received"
 		if r.Message.Header.MsgType == usp.Header_ERROR || hasFailure(r.Message.ProtoReflect()) {
 			state = device.CommandFailed
 			reason = "USP response includes an operation or parameter failure"
 		}
+		if op := req.GetOperate(); op != nil && r.Message.Header.MsgType != usp.Header_ERROR {
+			results := r.Message.GetBody().GetResponse().GetOperateResp().GetOperationResults()
+			if len(results) != 1 || results[0].GetExecutedCommand() != op.Command || results[0].GetOperationResp() == nil {
+				return ErrConflict
+			}
+			if _, async := results[0].OperationResp.(*usp.OperateResp_OperationResult_ReqObjPath); async {
+				if results[0].GetReqObjPath() == "" {
+					return ErrInvalid
+				}
+				state, reason = device.CommandAwaitingCompletion, "operation accepted; awaiting OperationComplete"
+			}
+		}
+		if len(c.Completion) > 0 {
+			// Completion is stronger evidence. Retain the late response without regression.
+			c.Result = payload
+			s.Commands[id] = c
+			return a.save(ctx, s)
+		}
+		switch c.Receipt.State {
+		case device.CommandAttempting, device.CommandAwaitingResponse, device.CommandUnknown:
+		default:
+			return ErrConflict
+		}
+
 		if err = transition(&c, state, reason); err != nil {
 			return err
 		}

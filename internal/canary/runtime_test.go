@@ -53,6 +53,8 @@ func TestCanaryAsyncEndToEnd(t *testing.T) {
 	var mu sync.Mutex
 	states := map[string]json.RawMessage{}
 	reminders := map[string]bool{}
+	failSave := false
+	exports := 0
 	sidecar := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/method/") {
 			clone := r.Clone(r.Context())
@@ -67,6 +69,11 @@ func TestCanaryAsyncEndToEnd(t *testing.T) {
 		}
 		mu.Lock()
 		defer mu.Unlock()
+		if strings.HasPrefix(r.URL.Path, "/v1.0/publish/") {
+			exports++
+			w.WriteHeader(204)
+			return
+		}
 		parts := strings.Split(r.URL.Path, "/")
 		id := parts[4]
 		switch {
@@ -77,6 +84,10 @@ func TestCanaryAsyncEndToEnd(t *testing.T) {
 				w.WriteHeader(204)
 			}
 		case strings.HasSuffix(r.URL.Path, "/state"):
+			if failSave {
+				w.WriteHeader(500)
+				return
+			}
 			var ops []struct {
 				Request struct {
 					Value json.RawMessage `json:"value"`
@@ -104,7 +115,7 @@ func TestCanaryAsyncEndToEnd(t *testing.T) {
 		}
 	}))
 	defer sidecar.Close()
-	cfg := config.Config{EndpointID: "controller", ClientID: "client", Listen: "127.0.0.1:8080", Broker: "tls://localhost:8883", JournalPath: "events", JournalMaxBytes: 1 << 20, RequestTimeoutSeconds: 1, MaxPending: 10, QoS: 1, Agents: map[string]config.Agent{"device": {Topic: "device/topic", Inbox: "controller/device"}, "legacy": {Topic: "legacy/topic", Inbox: "controller/legacy"}}, ActorCanary: &config.ActorCanary{Enabled: true, Tenant: "tenant", Devices: []string{"device"}, DaprURL: sidecar.URL, CallbackListen: "127.0.0.1:8081", LockPath: filepath.Join(t.TempDir(), "canary.lock")}}
+	cfg := config.Config{EndpointID: "controller", ClientID: "client", Listen: "127.0.0.1:8080", Broker: "tls://localhost:8883", JournalPath: "events", JournalMaxBytes: 1 << 20, RequestTimeoutSeconds: 1, MaxPending: 10, QoS: 1, Agents: map[string]config.Agent{"device": {Topic: "device/topic", Inbox: "controller/device"}, "legacy": {Topic: "legacy/topic", Inbox: "controller/legacy"}}, ActorCanary: &config.ActorCanary{Enabled: true, EventPubsub: "events", EventTopic: "device-events", Tenant: "tenant", Devices: []string{"device"}, DaprURL: sidecar.URL, CallbackListen: "127.0.0.1:8081", LockPath: filepath.Join(t.TempDir(), "canary.lock")}}
 	mqtt := &mqttFake{ready: true}
 	journal := &journalFake{}
 	legacy := controller.New(cfg.EndpointID, map[string]string{"device": "device/topic", "legacy": "legacy/topic"}, mqtt, journal, 10)
@@ -212,20 +223,55 @@ func TestCanaryAsyncEndToEnd(t *testing.T) {
 	if w = call("POST", "/v2/devices/device/commands", append(body, []byte(` {}`)...), apiToken); w.Code != 400 {
 		t.Fatal("trailing JSON", w.Code)
 	}
-	// Notifications are still journaled and acknowledged by the legacy path.
+	// Canary notifications commit actor state before acknowledgement, bypassing Journal.
 	notify := &usp.Msg{Header: &usp.Header{MsgId: "n", MsgType: usp.Header_NOTIFY}, Body: &usp.Body{MsgBody: &usp.Body_Request{Request: &usp.Request{ReqType: &usp.Request_Notify{Notify: &usp.Notify{SubscriptionId: "sub", SendResp: true, Notification: &usp.Notify_ValueChange_{ValueChange: &usp.Notify_ValueChange{ParamPath: "Device.X", ParamValue: "v"}}}}}}}}
 	wire, _ = protocol.Encode("device", "controller", notify)
-	if err = runtime.Receive(ctx, wire, "device/topic", "device"); err != nil || journal.count != 1 {
-		t.Fatal("journal route", err)
+	mu.Lock()
+	failSave = true
+	mu.Unlock()
+	if err = runtime.Receive(ctx, wire, "device/topic", "device"); err == nil || len(mqtt.sends) != 1 {
+		t.Fatal("acknowledged failed notification commit", err)
+	}
+	mu.Lock()
+	failSave = false
+	mu.Unlock()
+	if err = runtime.Receive(ctx, wire, "device/topic", "device"); err != nil || journal.count != 0 {
+		t.Fatal("actor notification route", err)
 	}
 	if len(mqtt.sends) != 2 {
 		t.Fatal("missing NotifyResp")
 	}
 
+	if _, err = runtime.Client.Invoke(ctx, runtime.Devices["device"], "Tick", nil); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	count := exports
+	mu.Unlock()
+	if count != 1 {
+		t.Fatal("outbox not exported", count)
+	}
+	if err = runtime.Receive(ctx, wire, "device/topic", "device"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = runtime.Client.Invoke(ctx, runtime.Devices["device"], "Tick", nil); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	count = exports
+	mu.Unlock()
+	if count != 1 || len(mqtt.sends) != 3 {
+		t.Fatal("duplicate receipt failed", count, len(mqtt.sends))
+	}
+	// Non-cohort notifications still go through Journal.
+	wire, _ = protocol.Encode("legacy", "controller", notify)
+	if err = runtime.Receive(ctx, wire, "legacy/topic", "legacy"); err != nil || journal.count != 1 {
+		t.Fatal("legacy journal changed", err)
+	}
 	legacyCtx, cancel := context.WithTimeout(ctx, 10*time.Millisecond)
 	defer cancel()
 	_, err = runtime.Request(legacyCtx, "legacy", &usp.Request{ReqType: &usp.Request_Get{Get: &usp.Get{}}})
-	if !errors.Is(err, context.DeadlineExceeded) || len(mqtt.sends) != 3 {
+	if !errors.Is(err, context.DeadlineExceeded) || len(mqtt.sends) != 5 {
 		t.Fatal("non-cohort legacy path changed", err)
 	}
 }

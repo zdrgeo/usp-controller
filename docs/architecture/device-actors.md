@@ -1,8 +1,9 @@
 # Device actors, digital twins, commands, and events
 
-Status: proposed architecture with phases 1–3 implemented behind explicit opt-in.
-Legacy remains the default. Single-host canary dispatch is available; Operate,
-actor notification ingestion/export and desired-state reconciliation remain disabled.
+Status: proposed architecture with phases 1–4 implemented behind explicit opt-in.
+Legacy remains the default. Single-host canary dispatch, concrete Operate,
+notification ingestion and event export are available. Desired-state reconciliation
+remains disabled.
 Date: 2026-10-24.
 
 ## Decision and scope
@@ -472,3 +473,22 @@ baseline; phase 3 adds `NewExecuting` and mounts a private Dapr callback listene
 only for an explicit configured cohort. `New` remains non-dispatching. All canary
 admission, maintenance and response calls go through Dapr invocation; there is
 no direct state access from independent workers and no shared SQL claiming.
+
+
+## Phase 4 implementation
+
+The opt-in canary now ingests notifications atomically with deduplication receipts,
+ValueChange twin updates, OperationComplete evidence and a bounded durable outbox.
+It enables concrete single-target Operate, correlates completions before/after the
+response, and keeps uncertain commands non-replayable. Reminder export uses Dapr
+pubsub with stable retry identities and at-least-once handoff. Legacy is still the
+default; non-cohort notifications remain in the JSONL Journal.
+
+See [the canary guide](device-actor-canary.md) for required pubsub configuration,
+schema-2 migration, rollback constraints and remaining retention/capacity limits.
+All notifications are durable obligations in this implementation. The bounded
+snapshot prototype has no automated receipt pruning, reserved completion capacity
+or concurrent per-device ingress scheduler. It uses a fresh persisted epoch per
+new event to avoid identity collisions after restoring a snapshot. A live pinned
+Dapr/Scheduler/durable-broker qualification is still required before deployment;
+HTTP contract and fault-injection tests do not establish broker durability.

@@ -11,6 +11,8 @@ import (
 )
 
 type ActorCanary struct {
+	EventPubsub    string   `json:"event_pubsub"`
+	EventTopic     string   `json:"event_topic"`
 	Enabled        bool     `json:"enabled"`
 	Tenant         string   `json:"tenant"`
 	Devices        []string `json:"devices"`
@@ -95,6 +97,9 @@ func (c Config) Validate() error {
 		}
 	}
 	if a := c.ActorCanary; a != nil && a.Enabled {
+		if a.EventPubsub == "" || a.EventTopic == "" || strings.ContainsAny(a.EventPubsub+a.EventTopic, "/?#%\\") || a.EventPubsub == "." || a.EventPubsub == ".." || a.EventTopic == "." || a.EventTopic == ".." {
+			return fmt.Errorf("actor canary requires event_pubsub and event_topic as simple path segments")
+		}
 		if a.Tenant == "" || len(a.Devices) == 0 || a.LockPath == "" {
 			return fmt.Errorf("actor canary requires tenant, explicit devices and lock_path")
 		}

@@ -1,4 +1,4 @@
-# Phase 3: single-host Device command canary
+# Phases 3–4: single-host Device command and event canary
 
 Status: opt-in implementation. Legacy remains the default. This is not a
 multi-replica deployment profile. Live Dapr/component qualification remains a
@@ -18,7 +18,9 @@ new API routes. To opt in, add the following object to a valid site configuratio
     "devices": ["os::example:device-001"],
     "dapr_url": "http://127.0.0.1:3500",
     "callback_listen": "127.0.0.1:8081",
-    "lock_path": "data/device-canary.lock"
+    "lock_path": "data/device-canary.lock",
+    "event_pubsub": "device-events",
+    "event_topic": "notifications"
   }
 }
 ```
@@ -126,12 +128,21 @@ response inside the turn. There is one in-flight command per device. Responses
 are validated with the existing protocol boundary, then routed through Dapr to
 `HandleResponse`, including identity and expected-operation checks.
 
-Get, Set, Add, Delete, GetInstances, GetSupportedDM and GetSupportedProtocol are
-supported on this path. **Operate is rejected in phase 3**, because completion
-notification ingestion is phase 4. This applies to synchronous Operate too; do not
-infer safety from a device-specific operation name. Pre-existing shadow Operate
-entries must be cancelled before dispatch is enabled. A canary is not a migration
-of all existing API capabilities at once.
+Get, Set, Add, Delete, GetInstances, GetSupportedDM, GetSupportedProtocol and
+single-target Operate are supported. Operate requires a concrete command path
+such as `Device.Reboot()`; search expressions, wildcards and multi-target operations
+are rejected. At dispatch the Controller assigns a random `command_key` and sets
+`send_resp=true`, overriding those caller fields on the wire. Status exposes
+`operation_key`; the stored request remains the caller's original request.
+
+An OperateResp with `req_obj_path` enters `awaiting_completion`. Synchronous output
+arguments finish immediately; command failures fail immediately. OperationComplete
+must match both the generated key and concrete command path. Completion can arrive
+before OperateResp or after an unknown deadline outcome; it settles the command
+without replay. A later response is retained without regressing completion state.
+The API exposes `result` (response) and `completion` (Notify) separately. Unmatched
+completions are retained as events but do not settle unrelated commands.
+Provision the Agent's OperationComplete subscription before enabling Operate.
 
 A valid matching response with USP Error, a nested nonzero error code or an explicit
 failure variant marks the command failed, including partial Set/Add/Delete errors.
@@ -154,14 +165,50 @@ Unmatched late responses are ignored by runtime ingress.
 
 There is deliberately no automatic retry of a command or desired-state write.
 QoS 1 PUBACK means broker acceptance only; QoS 0 completion does not claim PUBACK.
-MQTT retransmissions remain possible. Desired-state reconciliation and event export
-are not enabled by this phase. There is no operator unknown-resolution endpoint yet:
+MQTT retransmissions remain possible. Desired-state reconciliation is not enabled. There is no operator unknown-resolution endpoint yet:
 use a reviewed reconciliation procedure before continuing an affected canary.
 
-Notifications still pass through the existing JSONL Journal and requested NotifyResp
-path, including notifications from cohort devices. They are not passed to the actor
-inbox/outbox. OperationComplete therefore does not complete actor commands in this
-phase; this is why Operate admission is disabled.
+## Durable notifications and export
+
+For cohort devices, validated Notify messages go through Dapr `HandleNotify`.
+One atomic snapshot commit records the message-ID receipt, optional ValueChange
+twin update, optional operation completion, and the ordered outbox entry. Requested
+NotifyResp is sent only after durable acceptance, including duplicate receipts.
+No acknowledgment is sent on failed or uncertain persistence. A repeated message
+ID with changed content conflicts; arrival timestamp is excluded from deduplication.
+All notification categories are durable in this canary; only ValueChange updates
+reported parameters. Its textual value has no inferred data-model type. Receipt
+time controls freshness; this does not establish device/source ordering.
+Non-cohort devices retain the legacy Journal/NotifyResp path. Preserve the existing
+journal as an archive; never delete it as part of cutover.
+
+Each reminder exports at most one event, even while MQTT is offline or a command
+is unknown. Publication failure retains the head and delays further command dispatch.
+Successful handoff removes it atomically. Lost handoff or removal acknowledgments
+may produce duplicates. Consumers deduplicate using `(actor_id, epoch, sequence)`.
+Each newly accepted event gets a fresh random epoch, persisted with its sequence;
+this deliberately uses a finer-grained epoch than the original proposal and avoids
+ID reuse after snapshot restoration. Retried exports keep the original ID.
+Sequence ordering is actor acceptance order, not device order; restoring old state
+can create gaps or regress counters, so consumers must use the full identity.
+
+Configure `event_pubsub` and `event_topic` (simple path segments) for a provisioned,
+durable, acknowledged Dapr pubsub component. These fields are now required when
+canary mode is enabled. The publisher uses the [Dapr publish API](https://docs.dapr.io/reference/api/pubsub_api/)
+with `metadata.rawPayload=true`; the JSON envelope contains actor identity, epoch,
+sequence, schema version, receipt time and the USP message in protobuf JSON.
+Subscribers must accept raw payloads. No component, broker or subscription is
+provisioned automatically. Qualify broker durability, access controls and partitioning
+by actor identity before rollout. HTTP success means component handoff, not consumer
+completion. Volatile pubsub components do not satisfy this contract.
+
+The prototype bounds inbox receipts at 1,024, pending events at 64 and the whole
+snapshot at 1 MiB (including commands/twin). No receipt pruning or silent eviction
+occurs. Capacity exhaustion rejects new notifications without NotifyResp, even
+completions; drain exports and use an audited retention/migration procedure before
+exhausting receipts. Reserved completion capacity, automated retention and ingress
+parallelism remain rollout work. Notifications without requested NotifyResp can
+still be lost on disconnect or rejection; MQTT PUBACK is not durable actor acceptance.
 
 ## Cutover, rollback and capacity
 
@@ -170,8 +217,9 @@ deadline, record unresolved outcomes, then stop the old execution owner before
 starting this mode. Review all pre-existing actor queues before opt-in: enabling
 execution can send previously queued shadow work. Do not run both execution paths.
 
-State keeps the bounded phase-2 snapshot format plus optional attempt and result
-fields. Existing phase-2 queued entries can be loaded. Phase-2 binaries reject the
+State uses snapshot schema 2, adding inbox, outbox and completion evidence. Schema 1
+is read and upgraded on the next save. Older binaries reject schema 2; do not roll
+back a binary over upgraded state. Existing phase-2 queued entries can be loaded. Phase-2 binaries reject the
 new attempted/terminal execution states, so a binary rollback after execution is
 not sufficient. Quiesce callbacks, drain/cancel queued work and preserve snapshots;
 reconcile unknown operations before reverting the device to legacy. Never copy

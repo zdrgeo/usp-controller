@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"example.com/usp-controller/internal/device"
 	"example.com/usp-controller/internal/pb/usp"
@@ -15,7 +16,7 @@ import (
 
 // Host is an opt-in Dapr callback handler for a fixed provisioned device set.
 // The production main mounts it only for explicit actor canaries. Command
-// methods are available only for execution-enabled actors; Notify stays legacy.
+// methods are available only for execution-enabled actors.
 // Put it on a private app channel; token must match Dapr's app API token.
 type Host struct {
 	actors  map[string]*Actor
@@ -121,6 +122,19 @@ func (h *Host) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			out, err := commandOutput(command)
 			respond(w, out, err)
+			return
+		case "HandleNotify":
+			var input ResponseInput
+			if !h.decode(w, r, &input) {
+				return
+			}
+			msg := new(usp.Msg)
+			if err := protojson.Unmarshal(input.Message, msg); err != nil {
+				respond(w, nil, ErrInvalid)
+				return
+			}
+			receipt, err := a.HandleNotify(r.Context(), device.DeviceNotification{Identity: input.Identity, Message: msg, ReceivedAt: time.Now().UTC()})
+			respond(w, receipt, err)
 			return
 		case "HandleResponse":
 			var input ResponseInput

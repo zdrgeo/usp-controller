@@ -180,11 +180,13 @@ current runtime. It is a design proposal, not an implemented deployment mode.
 
 ## Device Actor migration progress
 
-The default runtime remains the legacy Controller and JSONL journal. Phase 3 adds
+The default runtime remains the legacy Controller and JSONL journal. Phases 3 and 4 add
 an opt-in, single-host Device Actor canary for an explicit device allowlist, with
 an asynchronous command API, durable admission, bounded dispatch and response
-correlation. Dapr is required only for that mode. `Operate`, desired-state
-reconciliation and actor notification export remain disabled.
+correlation, notification ingestion, OperationComplete handling and a durable event
+outbox. Concrete single-target Operate is enabled for the allowlist. Dapr and a
+durable pubsub component are required only for that mode. Desired-state
+reconciliation remains disabled.
 
 See the [canary configuration, API and cutover guide](docs/architecture/device-actor-canary.md)
 and [architecture proposal](docs/architecture/device-actors.md) before enabling it.

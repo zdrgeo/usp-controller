@@ -54,6 +54,7 @@ type Actor struct {
 	backend   Backend
 	opts      Options
 	transport device.DeviceTransport
+	publisher device.DeviceEventPublisher
 }
 
 func New(id device.DeviceIdentity, backend Backend, opts Options) (*Actor, error) {
@@ -68,12 +69,14 @@ type receipt struct {
 	Revision          uint64
 }
 type storedCommand struct {
-	Receipt   device.CommandReceipt
-	Payload   []byte // deterministic protobuf, never encoding/json of a protobuf oneof
-	Deadline  time.Time
-	Reason    string
-	MessageID string
-	Result    []byte
+	Receipt      device.CommandReceipt
+	Payload      []byte // deterministic protobuf, never encoding/json of a protobuf oneof
+	Deadline     time.Time
+	Reason       string
+	MessageID    string
+	Result       []byte
+	OperationKey string
+	Completion   []byte
 }
 type snapshot struct {
 	Schema                            int
@@ -85,6 +88,9 @@ type snapshot struct {
 	Receipts                          map[device.RequestID]receipt
 	Commands                          map[device.RequestID]storedCommand
 	Queue                             []device.RequestID
+	Inbox                             map[string]string
+	Outbox                            []storedEvent
+	EventSequence                     uint64
 }
 
 func (a *Actor) load(ctx context.Context) (*snapshot, error) {
@@ -92,7 +98,8 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &snapshot{Schema: 1, Identity: a.id, Desired: map[string]device.ParameterValue{}, Reported: map[string]device.Observation{}, Receipts: map[device.RequestID]receipt{}, Commands: map[device.RequestID]storedCommand{}}
+	s := &snapshot{Schema: 2, Identity: a.id, Desired: map[string]device.ParameterValue{}, Reported: map[string]device.Observation{}, Receipts: map[device.RequestID]receipt{}, Commands: map[device.RequestID]storedCommand{}}
+	s.Inbox = map[string]string{}
 	if len(b) == 0 {
 		return s, nil
 	}
@@ -103,11 +110,18 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 	if err = json.Unmarshal(b, s); err != nil {
 		return nil, fmt.Errorf("decode actor state: %w", err)
 	}
-	if s.Schema != 1 || s.Identity != a.id || s.Desired == nil || s.Reported == nil || s.Receipts == nil || s.Commands == nil {
+	if (s.Schema == 2 && s.Inbox == nil) || (s.Schema != 1 && s.Schema != 2) || s.Identity != a.id || s.Desired == nil || s.Reported == nil || s.Receipts == nil || s.Commands == nil {
 		return nil, fmt.Errorf("unsupported or inconsistent actor state")
 	}
 	if len(s.Receipts) > a.opts.MaxReceipts || len(s.Commands) > a.opts.MaxCommands || len(s.Desired) > a.opts.MaxParameters || len(s.Reported) > a.opts.MaxParameters {
 		return nil, ErrCapacity
+	}
+	s.Schema = 2 // upgrade on the next atomic save; older binaries must reject this state
+	if s.Inbox == nil {
+		s.Inbox = map[string]string{}
+	}
+	if err := a.validateEvents(s); err != nil {
+		return nil, err
 	}
 	queued := map[device.RequestID]bool{}
 	for _, id := range s.Queue {
@@ -128,7 +142,7 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 				return nil, fmt.Errorf("queued command missing from index")
 			}
 		case device.CommandCancelled, device.CommandExpired:
-		case device.CommandAttempting, device.CommandAwaitingResponse, device.CommandUnknown, device.CommandSucceeded, device.CommandFailed:
+		case device.CommandAttempting, device.CommandAwaitingResponse, device.CommandAwaitingCompletion, device.CommandUnknown, device.CommandSucceeded, device.CommandFailed:
 			if c.MessageID == "" {
 				return nil, fmt.Errorf("missing publish identity")
 			}
@@ -153,6 +167,9 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 	return s, nil
 }
 func (a *Actor) save(ctx context.Context, s *snapshot) error {
+	if err := a.validateEvents(s); err != nil {
+		return err
+	}
 	if len(s.Receipts) > a.opts.MaxReceipts || len(s.Commands) > a.opts.MaxCommands || len(s.Desired) > a.opts.MaxParameters || len(s.Reported) > a.opts.MaxParameters {
 		return ErrCapacity
 	}
@@ -210,7 +227,7 @@ func (a *Actor) GetTwin(ctx context.Context) (device.DeviceTwin, error) {
 		if c.Receipt.State == device.CommandUnknown {
 			t.Unknown = append(t.Unknown, id)
 		}
-		if c.Receipt.State == device.CommandQueued || c.Receipt.State == device.CommandAttempting || c.Receipt.State == device.CommandAwaitingResponse {
+		if c.Receipt.State == device.CommandQueued || c.Receipt.State == device.CommandAttempting || c.Receipt.State == device.CommandAwaitingResponse || c.Receipt.State == device.CommandAwaitingCompletion {
 			t.Pending = append(t.Pending, id)
 		}
 	}
@@ -355,8 +372,8 @@ func (a *Actor) EnqueueCommand(ctx context.Context, r device.CommandRequest) (de
 	if _, err := protocol.RequestType(r.Request); err != nil {
 		return zero, fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
-	if a.transport != nil && r.Request.GetOperate() != nil {
-		return zero, fmt.Errorf("%w: Operate requires completion ingestion (phase 4)", ErrInvalid)
+	if a.transport != nil && r.Request.GetOperate() != nil && !concreteOperation(r.Request.GetOperate().Command) {
+		return zero, fmt.Errorf("%w: Operate requires one concrete command path", ErrInvalid)
 	}
 	if a.transport != nil {
 		kind, _ := protocol.RequestType(r.Request)
@@ -481,10 +498,6 @@ func (a *Actor) Activate(ctx context.Context) error {
 		return err
 	}
 	return a.backend.EnsureReminder(ctx)
-}
-
-func (*Actor) HandleNotify(context.Context, device.DeviceNotification) (device.NotifyReceipt, error) {
-	return device.NotifyReceipt{}, ErrDisabled
 }
 
 var _ device.DeviceActor = (*Actor)(nil)

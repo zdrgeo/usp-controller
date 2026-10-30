@@ -104,6 +104,7 @@ type DeviceCommand struct {
 	Deadline                           time.Time
 	MessageID, OperationKey, AttemptID string
 	Result                             *usp.Msg
+	Completion                         *usp.Msg
 	Reason                             string
 }
 type CancelCommandRequest struct {

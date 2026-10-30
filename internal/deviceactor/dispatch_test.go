@@ -168,11 +168,11 @@ func TestOfflineExpiryAndLateEvidence(t *testing.T) {
 		t.Fatal(resolved.State)
 	}
 }
-func TestOperateNotAdmittedInCanary(t *testing.T) {
+func TestOperateAdmittedInCanary(t *testing.T) {
 	a, _, _, now := executable(t)
 	r := command("op", now.Add(time.Hour))
 	r.Request = &usp.Request{ReqType: &usp.Request_Operate{Operate: &usp.Operate{Command: "Device.Reboot()", CommandKey: "key"}}}
-	if _, err := a.EnqueueCommand(ctx, r); !errors.Is(err, ErrInvalid) {
+	if _, err := a.EnqueueCommand(ctx, r); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -49,6 +49,7 @@ type Runtime struct {
 	routes       map[string]string
 	controllerID string
 	lock         *os.File
+	mqtt         MQTT
 }
 
 func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, apiToken string) (*Runtime, error) {
@@ -73,7 +74,7 @@ func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, 
 		lock.Close()
 		return nil, fmt.Errorf("single-host canary lock unavailable: %w", err)
 	}
-	rt := &Runtime{Devices: map[string]device.DeviceIdentity{}, Client: &deviceactor.Client{Endpoint: a.DaprURL, Token: apiToken}, legacy: legacy, controllerID: cfg.EndpointID, routes: map[string]string{}, lock: lock}
+	rt := &Runtime{Devices: map[string]device.DeviceIdentity{}, Client: &deviceactor.Client{Endpoint: a.DaprURL, Token: apiToken}, legacy: legacy, controllerID: cfg.EndpointID, routes: map[string]string{}, lock: lock, mqtt: mqtt}
 	fail := func(err error) (*Runtime, error) { rt.Close(); return nil, err }
 	for id, agent := range cfg.Agents {
 		rt.routes[id] = agent.Topic
@@ -87,7 +88,7 @@ func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, 
 		if err != nil {
 			return fail(err)
 		}
-		actor, err := deviceactor.NewExecuting(identity, backend, opts, transport{mqtt: mqtt, topic: cfg.Agents[id].Topic, qos: cfg.QoS})
+		actor, err := deviceactor.NewWithEvents(identity, backend, opts, transport{mqtt: mqtt, topic: cfg.Agents[id].Topic, qos: cfg.QoS}, &deviceactor.DaprEventPublisher{Endpoint: a.DaprURL, Token: apiToken, Pubsub: a.EventPubsub, Topic: a.EventTopic})
 		if err != nil {
 			return fail(err)
 		}
@@ -125,13 +126,28 @@ func (r *Runtime) Receive(ctx context.Context, payload []byte, reply, sender str
 	if err != nil {
 		return err
 	}
-	// Notifications still use the Journal and legacy NotifyResp path in phase 3.
-	if inbound.Message == nil || inbound.Message.Header.MsgType == usp.Header_NOTIFY {
+	// Control records retain the existing behavior.
+	if inbound.Message == nil {
 		return r.legacy.Receive(ctx, payload, reply, sender)
 	}
 	b, err := protojson.Marshal(inbound.Message)
 	if err != nil {
 		return err
+	}
+	if inbound.Message.Header.MsgType == usp.Header_NOTIFY {
+		if _, err = r.Client.Invoke(ctx, identity, "HandleNotify", deviceactor.ResponseInput{Identity: identity, Message: b}); err != nil {
+			return err
+		}
+		n := inbound.Message.GetBody().GetRequest().GetNotify()
+		if !n.SendResp {
+			return nil
+		}
+		response := &usp.Msg{Header: &usp.Header{MsgId: inbound.Message.Header.MsgId, MsgType: usp.Header_NOTIFY_RESP}, Body: &usp.Body{MsgBody: &usp.Body_Response{Response: &usp.Response{RespType: &usp.Response_NotifyResp{NotifyResp: &usp.NotifyResp{SubscriptionId: n.SubscriptionId}}}}}}
+		encoded, err := protocol.Encode(r.controllerID, sender, response)
+		if err != nil {
+			return err
+		}
+		return r.mqtt.Publish(ctx, reply, encoded)
 	}
 	_, err = r.Client.Invoke(ctx, identity, "HandleResponse", deviceactor.ResponseInput{Identity: identity, Message: b})
 	if errors.Is(err, deviceactor.ErrNotFound) {
