@@ -93,6 +93,7 @@ func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, 
 		identity := device.DeviceIdentity{Tenant: a.Tenant, ControllerID: cfg.EndpointID, AgentID: id}
 		rt.Devices[id] = identity
 		opts := deviceactor.DefaultOptions()
+		opts.Policy = a.Twin
 		backend, err := deviceactor.NewDaprBackend(a.DaprURL, nil, apiToken, identity, 10*time.Second, opts.MaxBytes)
 		if err != nil {
 			return fail(err)

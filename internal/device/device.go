@@ -99,6 +99,7 @@ type CommandReceipt struct {
 	State    CommandState
 }
 type DeviceCommand struct {
+	DesiredRevision uint64
 	CommandReceipt
 	Request                            *usp.Request
 	Deadline                           time.Time

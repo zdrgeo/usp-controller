@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"testing"
+
+	"example.com/usp-controller/internal/device"
+)
 
 func TestReplicaProfileValidation(t *testing.T) {
 	base := Config{EndpointID: "controller", ClientID: "site", Broker: "tls://broker:8883", Agents: map[string]Agent{"device": {Topic: "d", Inbox: "c/d"}}, Listen: "127.0.0.1:8080", JournalPath: "events", JournalMaxBytes: 100, RequestTimeoutSeconds: 30, MaxPending: 10, QoS: 1}
@@ -39,5 +43,16 @@ func TestReplicaProfileValidation(t *testing.T) {
 	base.ActorCanary = nil
 	if base.ReplicaMode() {
 		t.Fatal("changed legacy mode")
+	}
+}
+
+func TestTwinPolicyRequiresExplicitActorMode(t *testing.T) {
+	c, err := Load("../../config.example.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.ActorCanary = &ActorCanary{Twin: &device.TwinPolicy{SiteID: "site", CommandTimeoutSeconds: 30, Paths: map[string]device.ManagedPath{"Device.Test.Value": {Type: "string"}}}}
+	if err = c.Validate(); err == nil {
+		t.Fatal("twin enabled outside actor mode")
 	}
 }

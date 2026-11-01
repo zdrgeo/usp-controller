@@ -39,6 +39,7 @@ type Backend interface {
 }
 
 type Options struct {
+	Policy                                            *device.TwinPolicy
 	MaxBytes, MaxReceipts, MaxCommands, MaxParameters int
 	Freshness                                         time.Duration
 	Now                                               func() time.Time
@@ -61,6 +62,17 @@ func New(id device.DeviceIdentity, backend Backend, opts Options) (*Actor, error
 	if id.Tenant == "" || id.ControllerID == "" || id.AgentID == "" || backend == nil || opts.Now == nil || opts.MaxBytes <= 0 || opts.MaxReceipts <= 0 || opts.MaxCommands <= 0 || opts.MaxParameters <= 0 || opts.Freshness <= 0 {
 		return nil, ErrInvalid
 	}
+	if opts.Policy != nil {
+		if err := opts.Policy.Validate(); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
+		}
+		copyPolicy := *opts.Policy
+		copyPolicy.Paths = map[string]device.ManagedPath{}
+		for path, rule := range opts.Policy.Paths {
+			copyPolicy.Paths[path] = rule
+		}
+		opts.Policy = &copyPolicy
+	}
 	return &Actor{id: id, backend: backend, opts: opts}, nil
 }
 
@@ -69,14 +81,15 @@ type receipt struct {
 	Revision          uint64
 }
 type storedCommand struct {
-	Receipt      device.CommandReceipt
-	Payload      []byte // deterministic protobuf, never encoding/json of a protobuf oneof
-	Deadline     time.Time
-	Reason       string
-	MessageID    string
-	Result       []byte
-	OperationKey string
-	Completion   []byte
+	DesiredRevision uint64
+	Receipt         device.CommandReceipt
+	Payload         []byte // deterministic protobuf, never encoding/json of a protobuf oneof
+	Deadline        time.Time
+	Reason          string
+	MessageID       string
+	Result          []byte
+	OperationKey    string
+	Completion      []byte
 }
 type snapshot struct {
 	Schema                            int
@@ -98,7 +111,7 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &snapshot{Schema: 2, Identity: a.id, Desired: map[string]device.ParameterValue{}, Reported: map[string]device.Observation{}, Receipts: map[device.RequestID]receipt{}, Commands: map[device.RequestID]storedCommand{}}
+	s := &snapshot{Schema: 3, Identity: a.id, Desired: map[string]device.ParameterValue{}, Reported: map[string]device.Observation{}, Receipts: map[device.RequestID]receipt{}, Commands: map[device.RequestID]storedCommand{}}
 	s.Inbox = map[string]string{}
 	if len(b) == 0 {
 		return s, nil
@@ -110,13 +123,13 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 	if err = json.Unmarshal(b, s); err != nil {
 		return nil, fmt.Errorf("decode actor state: %w", err)
 	}
-	if (s.Schema == 2 && s.Inbox == nil) || (s.Schema != 1 && s.Schema != 2) || s.Identity != a.id || s.Desired == nil || s.Reported == nil || s.Receipts == nil || s.Commands == nil {
+	if (s.Schema >= 2 && s.Inbox == nil) || (s.Schema != 1 && s.Schema != 2 && s.Schema != 3) || s.Identity != a.id || s.Desired == nil || s.Reported == nil || s.Receipts == nil || s.Commands == nil {
 		return nil, fmt.Errorf("unsupported or inconsistent actor state")
 	}
 	if len(s.Receipts) > a.opts.MaxReceipts || len(s.Commands) > a.opts.MaxCommands || len(s.Desired) > a.opts.MaxParameters || len(s.Reported) > a.opts.MaxParameters {
 		return nil, ErrCapacity
 	}
-	s.Schema = 2 // upgrade on the next atomic save; older binaries must reject this state
+	s.Schema = 3 // upgrade on the next atomic save; older binaries must reject this state
 	if s.Inbox == nil {
 		s.Inbox = map[string]string{}
 	}
@@ -135,6 +148,15 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 		r, ok := s.Receipts[id]
 		if !ok || r.Kind != "command" || c.Receipt.ID != id || c.Receipt.Revision == 0 || c.Deadline.IsZero() {
 			return nil, fmt.Errorf("inconsistent command state")
+		}
+		if c.DesiredRevision != 0 {
+			if c.DesiredRevision > s.DesiredRevision || string(id) != fmt.Sprintf("reconcile-%d", c.DesiredRevision) {
+				return nil, fmt.Errorf("invalid reconciliation provenance")
+			}
+			req := new(usp.Request)
+			if proto.Unmarshal(c.Payload, req) != nil || req.GetSet() == nil {
+				return nil, fmt.Errorf("invalid reconciliation command")
+			}
 		}
 		switch c.Receipt.State {
 		case device.CommandQueued:
@@ -212,17 +234,7 @@ func (a *Actor) GetTwin(ctx context.Context) (device.DeviceTwin, error) {
 		return device.DeviceTwin{}, err
 	}
 	t := device.DeviceTwin{Identity: a.id, DesiredRevision: s.DesiredRevision, ReportedRevision: s.ReportedRevision, Desired: s.Desired, Reported: s.Reported, LastContact: s.LastContact, Convergence: "converged"}
-	now := a.opts.Now()
-	for p, want := range s.Desired {
-		got, ok := s.Reported[p]
-		if !ok || !now.Before(got.FreshUntil) {
-			t.Convergence = "unknown"
-			break
-		}
-		if got.Value != want {
-			t.Convergence = "pending"
-		}
-	}
+	t.Convergence = a.convergence(s)
 	for id, c := range s.Commands {
 		if c.Receipt.State == device.CommandUnknown {
 			t.Unknown = append(t.Unknown, id)
@@ -233,19 +245,34 @@ func (a *Actor) GetTwin(ctx context.Context) (device.DeviceTwin, error) {
 	}
 	sort.Slice(t.Unknown, func(i, j int) bool { return t.Unknown[i] < t.Unknown[j] })
 	sort.Slice(t.Pending, func(i, j int) bool { return t.Pending[i] < t.Pending[j] })
+	if a.opts.Policy != nil {
+		for p := range t.Desired {
+			if _, ok := a.opts.Policy.Paths[p]; !ok {
+				delete(t.Desired, p)
+			}
+		}
+		for p := range t.Reported {
+			if _, ok := a.opts.Policy.Paths[p]; !ok {
+				delete(t.Reported, p)
+			}
+		}
+	}
 	return t, nil // all maps came from a fresh decode; no state is cached
 }
 func (a *Actor) SetDesired(ctx context.Context, r device.SetDesiredRequest) (device.DesiredReceipt, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	zero := device.DesiredReceipt{}
-	if r.ID == "" || len(r.Values)+len(r.Remove) == 0 {
+	if r.ID == "" || strings.HasPrefix(string(r.ID), "reconcile-") || len(r.Values)+len(r.Remove) == 0 {
 		return zero, ErrInvalid
 	}
 	seen := map[string]bool{}
 	remove := append([]string(nil), r.Remove...)
 	sort.Strings(remove)
-	for p := range r.Values {
+	for p, v := range r.Values {
+		if a.opts.Policy != nil && !a.opts.Policy.Allows(p, v, true) {
+			return zero, ErrInvalid
+		}
 		if !validPath(p) {
 			return zero, ErrInvalid
 		}
@@ -312,10 +339,13 @@ type ReportRequest struct {
 func (a *Actor) Report(ctx context.Context, r ReportRequest) (uint64, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if r.ID == "" || r.Identity != a.id || r.ReceivedAt.IsZero() || r.ReceivedAt.After(a.opts.Now()) || len(r.Values) == 0 {
+	if r.ID == "" || strings.HasPrefix(string(r.ID), "reconcile-") || r.Identity != a.id || r.ReceivedAt.IsZero() || r.ReceivedAt.After(a.opts.Now()) || len(r.Values) == 0 {
 		return 0, ErrInvalid
 	}
-	for p := range r.Values {
+	for p, v := range r.Values {
+		if a.opts.Policy != nil && !a.opts.Policy.Allows(p, v, false) {
+			return 0, ErrInvalid
+		}
 		if !validPath(p) {
 			return 0, ErrInvalid
 		}
@@ -366,7 +396,7 @@ func (a *Actor) EnqueueCommand(ctx context.Context, r device.CommandRequest) (de
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	zero := device.CommandReceipt{}
-	if r.ID == "" || r.Deadline.IsZero() {
+	if r.ID == "" || strings.HasPrefix(string(r.ID), "reconcile-") || r.Deadline.IsZero() {
 		return zero, ErrInvalid
 	}
 	if _, err := protocol.RequestType(r.Request); err != nil {
@@ -458,7 +488,7 @@ func (a *Actor) CancelCommand(ctx context.Context, r device.CancelCommandRequest
 		if err = proto.Unmarshal(c.Payload, req); err != nil {
 			return device.DeviceCommand{}, err
 		}
-		return device.DeviceCommand{CommandReceipt: c.Receipt, Request: req, Deadline: c.Deadline, Reason: c.Reason}, nil
+		return commandView(c, req)
 	}
 	if c.Receipt.State != device.CommandQueued || c.Receipt.Revision != r.ExpectedRevision {
 		return device.DeviceCommand{}, ErrConflict
@@ -478,7 +508,7 @@ func (a *Actor) CancelCommand(ctx context.Context, r device.CancelCommandRequest
 	if err = proto.Unmarshal(c.Payload, req); err != nil {
 		return device.DeviceCommand{}, err
 	}
-	return device.DeviceCommand{CommandReceipt: c.Receipt, Request: req, Deadline: c.Deadline, Reason: c.Reason}, nil
+	return commandView(c, req)
 }
 func (a *Actor) compactQueue(s *snapshot) {
 	out := s.Queue[:0]

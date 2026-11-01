@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"example.com/usp-controller/internal/device"
 )
 
 // Replica selects the experimental shared-subscription topology. All replicas
@@ -20,15 +22,16 @@ type Replica struct {
 }
 
 type ActorCanary struct {
-	Replica        *Replica `json:"replica,omitempty"`
-	EventPubsub    string   `json:"event_pubsub"`
-	EventTopic     string   `json:"event_topic"`
-	Enabled        bool     `json:"enabled"`
-	Tenant         string   `json:"tenant"`
-	Devices        []string `json:"devices"`
-	DaprURL        string   `json:"dapr_url"`
-	CallbackListen string   `json:"callback_listen"`
-	LockPath       string   `json:"lock_path"`
+	Twin           *device.TwinPolicy `json:"twin,omitempty"`
+	Replica        *Replica           `json:"replica,omitempty"`
+	EventPubsub    string             `json:"event_pubsub"`
+	EventTopic     string             `json:"event_topic"`
+	Enabled        bool               `json:"enabled"`
+	Tenant         string             `json:"tenant"`
+	Devices        []string           `json:"devices"`
+	DaprURL        string             `json:"dapr_url"`
+	CallbackListen string             `json:"callback_listen"`
+	LockPath       string             `json:"lock_path"`
 }
 
 type Config struct {
@@ -128,6 +131,14 @@ func (c Config) Validate() error {
 				return fmt.Errorf("canary devices must be unique provisioned endpoint IDs")
 			}
 			selected[id] = true
+		}
+	}
+	if a := c.ActorCanary; a != nil && a.Twin != nil {
+		if !a.Enabled {
+			return fmt.Errorf("twin policy requires actor canary")
+		}
+		if err := a.Twin.Validate(); err != nil {
+			return err
 		}
 	}
 	if a := c.ActorCanary; a != nil && a.Replica != nil {

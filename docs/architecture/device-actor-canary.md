@@ -165,7 +165,7 @@ Unmatched late responses are ignored by runtime ingress.
 
 There is deliberately no automatic retry of a command or desired-state write.
 QoS 1 PUBACK means broker acceptance only; QoS 0 completion does not claim PUBACK.
-MQTT retransmissions remain possible. Desired-state reconciliation is not enabled. There is no operator unknown-resolution endpoint yet:
+MQTT retransmissions remain possible. Desired-state reconciliation is not enabled without the separate [phase-6 policy](device-actor-rollout.md). There is no operator unknown-resolution endpoint yet:
 use a reviewed reconciliation procedure before continuing an affected canary.
 
 ## Durable notifications and export
@@ -254,3 +254,9 @@ configuration, actor-only inventory restriction, shared-state requirements and
 readiness/drain controls. The single-host assumptions above remain the default
 when `actor_canary.replica` is omitted. Live placement and partition drills remain
 an exit gate; do not scale the legacy deployment as a shortcut.
+
+
+Schema-3 writers and optional twin/reconciliation settings are described in the
+[phase-6 guide](device-actor-rollout.md). Upgrading and saving state prevents rollback
+to schema-2-only binaries. Leave the twin policy omitted to preserve existing
+canary API and dispatch behavior.

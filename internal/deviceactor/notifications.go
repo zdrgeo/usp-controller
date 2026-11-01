@@ -124,14 +124,14 @@ func (a *Actor) HandleNotify(ctx context.Context, r device.DeviceNotification) (
 	}
 	// All notification classes are durable in this canary. No silent telemetry loss.
 	s.Inbox[mid] = fp
-	if v := n.GetValueChange(); v != nil {
+	if v := n.GetValueChange(); v != nil && a.managedObservation(v.ParamPath, v.ParamValue) {
 		old, exists := s.Reported[v.ParamPath]
 		if !exists || r.ReceivedAt.After(old.ReceivedAt) {
 			if s.ReportedRevision == math.MaxUint64 {
 				return zero, ErrCapacity
 			}
 			s.ReportedRevision++
-			s.Reported[v.ParamPath] = device.Observation{Value: device.ParameterValue{Value: v.ParamValue}, ReceivedAt: r.ReceivedAt, FreshUntil: r.ReceivedAt.Add(a.opts.Freshness), Source: "usp-value-change"}
+			s.Reported[v.ParamPath] = device.Observation{Value: a.observedValue(v.ParamPath, v.ParamValue), ReceivedAt: r.ReceivedAt, FreshUntil: r.ReceivedAt.Add(a.opts.Freshness), Source: "usp-value-change"}
 		}
 	}
 	if r.ReceivedAt.After(s.LastContact) {

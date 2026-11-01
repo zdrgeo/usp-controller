@@ -283,7 +283,7 @@ func TestSchemaOneUpgradeAndOutboxIntegrity(t *testing.T) {
 		t.Fatal(err)
 	}
 	s, err := a.load(ctx)
-	if err != nil || s.Schema != 2 || len(s.Commands) != 1 || len(s.Outbox) != 1 {
+	if err != nil || s.Schema != 3 || len(s.Commands) != 1 || len(s.Outbox) != 1 {
 		t.Fatal(s, err)
 	}
 	delete(s.Inbox, "new")

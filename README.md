@@ -186,7 +186,7 @@ an asynchronous command API, durable admission, bounded dispatch and response
 correlation, notification ingestion, OperationComplete handling and a durable event
 outbox. Concrete single-target Operate is enabled for the allowlist. Dapr and a
 durable pubsub component are required only for that mode. Desired-state
-reconciliation remains disabled.
+reconciliation remains disabled unless the separate phase-6 twin policy opts in.
 
 See the [canary configuration, API and cutover guide](docs/architecture/device-actor-canary.md)
 and [architecture proposal](docs/architecture/device-actors.md) before enabling it.
@@ -196,3 +196,9 @@ Phase 5 adds an experimental, opt-in [replica placement profile](docs/architectu
 with MQTT shared subscriptions, actor-only inventory, dependency readiness checks
 and shutdown admission guards. Legacy remains the default; the existing K3s
 manifest remains single-replica. Live Dapr partition/failover qualification is pending.
+
+
+The [phase-6 managed twin foundation](docs/architecture/device-actor-rollout.md)
+adds an optional site-aware twin/desired/status API, exact managed-path policies
+and one-attempt-per-revision reconciliation. No automatic reconciliation is enabled
+by default. Real-device rollout and disaster-recovery qualification remain pending.

@@ -154,6 +154,9 @@ func (h *Host) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	switch parts[4] {
+	case "GetStatus":
+		v, err := a.GetStatus(r.Context())
+		respond(w, v, err)
 	case "GetTwin":
 		v, err := a.GetTwin(r.Context())
 		respond(w, v, err)

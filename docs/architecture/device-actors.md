@@ -3,7 +3,7 @@
 Status: proposed architecture with phases 1–4 implemented behind explicit opt-in.
 Legacy remains the default. Single-host canary dispatch, concrete Operate,
 notification ingestion and event export are available. Desired-state reconciliation
-remains disabled.
+requires a separate phase-6 policy opt-in.
 Date: 2026-10-24.
 
 ## Decision and scope
@@ -507,3 +507,18 @@ Real MQTT survivor tests and simulated actor relocation/partition tests pass, bu
 the simulated serializer does not prove live Dapr fencing. The phase-5 production
 exit gate remains open until pinned Placement/Scheduler/state-store failure drills
 establish the required state-ownership behavior and document external-send limits.
+
+
+## Phase 6 foundation status
+
+The optional [managed twin and rollout profile](device-actor-rollout.md) adds exact
+path/type policies, site-aware twin/desired/status endpoints and conservative
+one-command-per-desired-revision reconciliation. It waits for fresh observations,
+uses the existing no-replay command boundary, and requires observation evidence
+for convergence. Schema 3 preserves reconciliation provenance. Legacy remains
+the default; reconciliation is separately disabled unless explicitly configured.
+
+This starts phase 6 but does not complete its production exit gate. Global site
+routing, fleet projections, production telemetry, retention and real-device/WAN/
+restore/node-loss qualification remain outstanding. The rollout guide records
+those limits and required operator decisions.

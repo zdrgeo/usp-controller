@@ -25,20 +25,21 @@ func (in CommandInput) Domain() (device.CommandRequest, error) {
 }
 
 type CommandOutput struct {
-	RequestID    device.RequestID    `json:"request_id"`
-	Revision     uint64              `json:"revision"`
-	State        device.CommandState `json:"state"`
-	Deadline     *time.Time          `json:"deadline,omitempty"`
-	OperationKey string              `json:"operation_key,omitempty"`
-	Completion   json.RawMessage     `json:"completion,omitempty"`
-	MessageID    string              `json:"message_id,omitempty"`
-	Reason       string              `json:"reason,omitempty"`
-	Request      json.RawMessage     `json:"request,omitempty"`
-	Result       json.RawMessage     `json:"result,omitempty"`
+	DesiredRevision uint64              `json:"desired_revision,omitempty"`
+	RequestID       device.RequestID    `json:"request_id"`
+	Revision        uint64              `json:"revision"`
+	State           device.CommandState `json:"state"`
+	Deadline        *time.Time          `json:"deadline,omitempty"`
+	OperationKey    string              `json:"operation_key,omitempty"`
+	Completion      json.RawMessage     `json:"completion,omitempty"`
+	MessageID       string              `json:"message_id,omitempty"`
+	Reason          string              `json:"reason,omitempty"`
+	Request         json.RawMessage     `json:"request,omitempty"`
+	Result          json.RawMessage     `json:"result,omitempty"`
 }
 
 func commandOutput(c device.DeviceCommand) (CommandOutput, error) {
-	out := CommandOutput{RequestID: c.ID, Revision: c.Revision, State: c.State, Deadline: &c.Deadline, MessageID: c.MessageID, Reason: c.Reason, OperationKey: c.OperationKey}
+	out := CommandOutput{DesiredRevision: c.DesiredRevision, RequestID: c.ID, Revision: c.Revision, State: c.State, Deadline: &c.Deadline, MessageID: c.MessageID, Reason: c.Reason, OperationKey: c.OperationKey}
 	var err error
 	if c.Request != nil {
 		out.Request, err = protojson.Marshal(c.Request)

@@ -29,7 +29,7 @@ func NewExecuting(id device.DeviceIdentity, b Backend, o Options, t device.Devic
 	return a, nil
 }
 func commandView(c storedCommand, req *usp.Request) (device.DeviceCommand, error) {
-	out := device.DeviceCommand{CommandReceipt: c.Receipt, Request: req, Deadline: c.Deadline, Reason: c.Reason, MessageID: c.MessageID, AttemptID: c.MessageID, OperationKey: c.OperationKey}
+	out := device.DeviceCommand{DesiredRevision: c.DesiredRevision, CommandReceipt: c.Receipt, Request: req, Deadline: c.Deadline, Reason: c.Reason, MessageID: c.MessageID, AttemptID: c.MessageID, OperationKey: c.OperationKey}
 	if len(c.Result) > 0 {
 		out.Result = new(usp.Msg)
 		if err := proto.Unmarshal(c.Result, out.Result); err != nil {
@@ -67,6 +67,14 @@ func (a *Actor) Tick(ctx context.Context) error {
 	changed := false
 	for id, c := range s.Commands {
 		state := c.Receipt.State
+		if state == device.CommandQueued && c.DesiredRevision != 0 && !a.currentReconciliation(s, c) {
+			if err = transition(&c, device.CommandCancelled, "desired revision, policy or observation no longer eligible"); err != nil {
+				return err
+			}
+			s.Commands[id] = c
+			changed = true
+			continue
+		}
 		if state == device.CommandAttempting || ((state == device.CommandAwaitingResponse || state == device.CommandAwaitingCompletion) && !now.Before(c.Deadline)) {
 			if err = transition(&c, device.CommandUnknown, "interrupted publish or response deadline; not replayed"); err != nil {
 				return err
@@ -90,7 +98,7 @@ func (a *Actor) Tick(ctx context.Context) error {
 	if err = a.exportOne(ctx, s); err != nil {
 		return err
 	}
-	if a.transport == nil || len(s.Queue) == 0 {
+	if a.transport == nil {
 		return nil
 	}
 	for _, c := range s.Commands {
@@ -101,8 +109,26 @@ func (a *Actor) Tick(ctx context.Context) error {
 	if ready, ok := a.transport.(interface{ Ready() bool }); ok && !ready.Ready() {
 		return nil
 	}
+	if len(s.Queue) == 0 {
+		if err = a.scheduleReconciliation(ctx, s); err != nil {
+			return err
+		}
+		if len(s.Queue) == 0 {
+			return nil
+		}
+	}
 	id := s.Queue[0]
 	c := s.Commands[id]
+	// Export and queue persistence may take time. Recheck observation eligibility
+	// immediately before beginning a generated write's uncertainty boundary.
+	if c.DesiredRevision != 0 && !a.currentReconciliation(s, c) {
+		if err = transition(&c, device.CommandCancelled, "observation no longer eligible before attempt"); err != nil {
+			return err
+		}
+		s.Commands[id] = c
+		a.compactQueue(s)
+		return a.save(ctx, s)
+	}
 	request := new(usp.Request)
 	if err = proto.Unmarshal(c.Payload, request); err != nil {
 		return err

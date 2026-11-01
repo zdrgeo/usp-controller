@@ -123,7 +123,12 @@ func run() error {
 	}
 	var handler http.Handler = api.Handler(requester, ready, token, timeout)
 	if actorRuntime != nil {
-		handler = actorRuntime.AdmissionGate(deviceapi.Timeout(deviceapi.Handler(handler, actorRuntime.Client, actorRuntime.Devices, token)))
+		opts := deviceapi.Options{}
+		if policy := cfg.ActorCanary.Twin; policy != nil {
+			opts.SiteID = policy.SiteID
+			opts.TwinEnabled = true
+		}
+		handler = actorRuntime.AdmissionGate(deviceapi.Timeout(deviceapi.Handler(handler, actorRuntime.Client, actorRuntime.Devices, token, opts)))
 	}
 	server := &http.Server{Addr: cfg.Listen, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: timeout + 15*time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	go func() { serverErrors <- server.ListenAndServe() }()

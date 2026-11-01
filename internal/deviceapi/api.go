@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"example.com/usp-controller/internal/device"
@@ -20,9 +21,24 @@ type Invoker interface {
 	Invoke(context.Context, device.DeviceIdentity, string, any) (json.RawMessage, error)
 }
 
+type Options struct {
+	SiteID      string
+	TwinEnabled bool
+}
+type DesiredInput struct {
+	RequestID        device.RequestID                 `json:"request_id"`
+	ExpectedRevision uint64                           `json:"expected_revision"`
+	Values           map[string]device.ParameterValue `json:"values"`
+	Remove           []string                         `json:"remove"`
+}
+
 // Handler routes only explicit inventory entries; readiness of MQTT is not an
 // admission prerequisite. A durable 202 survives caller disconnection.
-func Handler(next http.Handler, invoker Invoker, devices map[string]device.DeviceIdentity, token string) http.Handler {
+func Handler(next http.Handler, invoker Invoker, devices map[string]device.DeviceIdentity, token string, options ...Options) http.Handler {
+	var opts Options
+	if len(options) > 0 {
+		opts = options[0]
+	}
 	inventory := make(map[string]device.DeviceIdentity, len(devices))
 	for k, v := range devices {
 		inventory[k] = v
@@ -34,6 +50,13 @@ func Handler(next http.Handler, invoker Invoker, devices map[string]device.Devic
 			if len(token) < 32 || subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+token)) != 1 {
 				http.Error(w, "unauthorized", 401)
 				return
+			}
+			if opts.SiteID != "" {
+				w.Header().Set("X-USP-Site", opts.SiteID)
+				if site := r.Header.Get("X-USP-Site"); site != "" && site != opts.SiteID {
+					http.Error(w, "wrong site", 409)
+					return
+				}
 			}
 			id, ok := inventory[r.PathValue("device")]
 			if !ok {
@@ -94,6 +117,40 @@ func Handler(next http.Handler, invoker Invoker, devices map[string]device.Devic
 		}
 		output(w, 200, b)
 	}))
+	if opts.TwinEnabled {
+		mux.HandleFunc("GET /v2/devices/{device}/twin", auth(func(w http.ResponseWriter, r *http.Request, id device.DeviceIdentity) {
+			b, err := invoker.Invoke(r.Context(), id, "GetTwin", nil)
+			if err != nil {
+				failure(w, err)
+				return
+			}
+			output(w, 200, b)
+		}))
+		mux.HandleFunc("PATCH /v2/devices/{device}/desired", auth(func(w http.ResponseWriter, r *http.Request, id device.DeviceIdentity) {
+			var input DesiredInput
+			if !decode(w, r, &input) {
+				return
+			}
+			if !validID(string(input.RequestID)) || strings.HasPrefix(string(input.RequestID), "reconcile-") {
+				http.Error(w, "invalid or reserved request ID", 400)
+				return
+			}
+			b, err := invoker.Invoke(r.Context(), id, "SetDesired", device.SetDesiredRequest{ID: input.RequestID, ExpectedRevision: input.ExpectedRevision, Values: input.Values, Remove: input.Remove})
+			if err != nil {
+				failure(w, err)
+				return
+			}
+			output(w, 200, b)
+		}))
+		mux.HandleFunc("GET /v2/devices/{device}/status", auth(func(w http.ResponseWriter, r *http.Request, id device.DeviceIdentity) {
+			b, err := invoker.Invoke(r.Context(), id, "GetStatus", nil)
+			if err != nil {
+				failure(w, err)
+				return
+			}
+			output(w, 200, b)
+		}))
+	}
 	return mux
 }
 func validID(s string) bool {
