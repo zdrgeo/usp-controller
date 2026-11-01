@@ -1,4 +1,4 @@
-// Package canary wires opt-in single-host actor execution. It does not change
+// Package canary wires opt-in actor execution and an experimental replica profile. It does not change
 // default legacy behavior or introduce a second execution path for a device.
 package canary
 
@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -26,13 +27,17 @@ type MQTT interface {
 	Ready() bool
 }
 type transport struct {
-	mqtt  MQTT
-	topic string
-	qos   byte
+	mqtt      MQTT
+	topic     string
+	qos       byte
+	available func() bool
 }
 
-func (t transport) Ready() bool { return t.mqtt.Ready() }
+func (t transport) Ready() bool { return t.mqtt.Ready() && (t.available == nil || t.available()) }
 func (t transport) Publish(ctx context.Context, id device.DeviceIdentity, attempt device.PublishAttempt) (device.PublishResult, error) {
+	if !t.Ready() {
+		return device.PublishResult{}, errors.New("actor transport unavailable or draining")
+	}
 	b, err := protocol.Encode(id.ControllerID, id.AgentID, attempt.Message)
 	if err != nil {
 		return device.PublishResult{}, err
@@ -42,14 +47,18 @@ func (t transport) Publish(ctx context.Context, id device.DeviceIdentity, attemp
 }
 
 type Runtime struct {
-	Devices      map[string]device.DeviceIdentity
-	Client       *deviceactor.Client
-	Host         http.Handler
-	legacy       *controller.Controller
-	routes       map[string]string
-	controllerID string
-	lock         *os.File
-	mqtt         MQTT
+	Devices       map[string]device.DeviceIdentity
+	Client        *deviceactor.Client
+	Host          http.Handler
+	legacy        *controller.Controller
+	routes        map[string]string
+	controllerID  string
+	lock          *os.File
+	mqtt          MQTT
+	replica       *config.Replica
+	eventPubsub   string
+	verifiedUntil atomic.Int64
+	draining      atomic.Bool
 }
 
 func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, apiToken string) (*Runtime, error) {
@@ -74,7 +83,7 @@ func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, 
 		lock.Close()
 		return nil, fmt.Errorf("single-host canary lock unavailable: %w", err)
 	}
-	rt := &Runtime{Devices: map[string]device.DeviceIdentity{}, Client: &deviceactor.Client{Endpoint: a.DaprURL, Token: apiToken}, legacy: legacy, controllerID: cfg.EndpointID, routes: map[string]string{}, lock: lock, mqtt: mqtt}
+	rt := &Runtime{Devices: map[string]device.DeviceIdentity{}, Client: &deviceactor.Client{Endpoint: a.DaprURL, Token: apiToken}, legacy: legacy, controllerID: cfg.EndpointID, routes: map[string]string{}, lock: lock, mqtt: mqtt, replica: a.Replica, eventPubsub: a.EventPubsub}
 	fail := func(err error) (*Runtime, error) { rt.Close(); return nil, err }
 	for id, agent := range cfg.Agents {
 		rt.routes[id] = agent.Topic
@@ -88,7 +97,7 @@ func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, 
 		if err != nil {
 			return fail(err)
 		}
-		actor, err := deviceactor.NewWithEvents(identity, backend, opts, transport{mqtt: mqtt, topic: cfg.Agents[id].Topic, qos: cfg.QoS}, &deviceactor.DaprEventPublisher{Endpoint: a.DaprURL, Token: apiToken, Pubsub: a.EventPubsub, Topic: a.EventTopic})
+		actor, err := deviceactor.NewWithEvents(identity, backend, opts, transport{mqtt: mqtt, topic: cfg.Agents[id].Topic, qos: cfg.QoS, available: rt.DispatchReady}, &deviceactor.DaprEventPublisher{Endpoint: a.DaprURL, Token: apiToken, Pubsub: a.EventPubsub, Topic: a.EventTopic})
 		if err != nil {
 			return fail(err)
 		}
@@ -98,9 +107,13 @@ func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, 
 	if err != nil {
 		return fail(err)
 	}
+	if rt.replica != nil {
+		rt.Host = rt.callbackGate(rt.Host)
+	}
 	return rt, nil
 }
 func (r *Runtime) Close() error {
+	r.BeginDrain()
 	if r.lock == nil {
 		return nil
 	}

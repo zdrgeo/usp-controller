@@ -10,7 +10,17 @@ import (
 	"strings"
 )
 
+// Replica selects the experimental shared-subscription topology. All replicas
+// must use identical inventory, actor app identity, state component and group.
+type Replica struct {
+	InstanceID  string `json:"instance_id"`
+	SharedGroup string `json:"shared_group"`
+	AppID       string `json:"app_id"`
+	StateStore  string `json:"state_store"`
+}
+
 type ActorCanary struct {
+	Replica        *Replica `json:"replica,omitempty"`
 	EventPubsub    string   `json:"event_pubsub"`
 	EventTopic     string   `json:"event_topic"`
 	Enabled        bool     `json:"enabled"`
@@ -120,5 +130,51 @@ func (c Config) Validate() error {
 			selected[id] = true
 		}
 	}
+	if a := c.ActorCanary; a != nil && a.Replica != nil {
+		r := a.Replica
+		if !a.Enabled || len(a.Devices) != len(c.Agents) {
+			return fmt.Errorf("replica mode requires actor ownership of every provisioned device")
+		}
+		for _, v := range []string{r.InstanceID, r.SharedGroup, r.AppID, r.StateStore} {
+			if !replicaName(v) {
+				return fmt.Errorf("replica identity, shared group, app ID and state store must be nonempty simple names")
+			}
+		}
+		for _, agent := range c.Agents {
+			if strings.HasPrefix(agent.Inbox, "$share/") || len("$share/"+r.SharedGroup+"/"+agent.Inbox) > 65535 {
+				return fmt.Errorf("invalid shared inbox filter")
+			}
+		}
+		if len(c.MQTTClientID()) > 65535 {
+			return fmt.Errorf("replica MQTT client ID too long")
+		}
+	}
 	return nil
+}
+
+func replicaName(s string) bool {
+	if s == "" || len(s) > 128 || s == "." || s == ".." {
+		return false
+	}
+	for _, r := range s {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.') {
+			return false
+		}
+	}
+	return true
+}
+func (c Config) ReplicaMode() bool {
+	return c.ActorCanary != nil && c.ActorCanary.Enabled && c.ActorCanary.Replica != nil
+}
+func (c Config) MQTTClientID() string {
+	if c.ReplicaMode() {
+		return c.ClientID + "/" + c.ActorCanary.Replica.InstanceID
+	}
+	return c.ClientID
+}
+func (c Config) InboxSubscription(inbox string) string {
+	if c.ReplicaMode() {
+		return "$share/" + c.ActorCanary.Replica.SharedGroup + "/" + inbox
+	}
+	return inbox
 }

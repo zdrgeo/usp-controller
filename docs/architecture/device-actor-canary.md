@@ -1,7 +1,7 @@
 # Phases 3–4: single-host Device command and event canary
 
 Status: opt-in implementation. Legacy remains the default. This is not a
-multi-replica deployment profile. Live Dapr/component qualification remains a
+multi-replica deployment profile unless the separate [phase-5 replica profile](device-actor-replicas.md) is explicitly selected. Live Dapr/component qualification remains a
 rollout gate; the automated HTTP integration harness is not a placement test.
 
 ## Enable only an explicit cohort
@@ -245,3 +245,12 @@ A live pinned Dapr/Scheduler/component smoke test and actual device interoperabi
 are required before site rollout. HTTP contract tests do not establish distributed
 ownership or component replication guarantees. See the [architecture proposal](device-actors.md)
 for the later notification, replication and rollout phases.
+
+
+## Optional phase-5 replica profile
+
+The [replica guide](device-actor-replicas.md) defines the separate opt-in shared-MQTT
+configuration, actor-only inventory restriction, shared-state requirements and
+readiness/drain controls. The single-host assumptions above remain the default
+when `actor_canary.replica` is omitted. Live placement and partition drills remain
+an exit gate; do not scale the legacy deployment as a shortcut.

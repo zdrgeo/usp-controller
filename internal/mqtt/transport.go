@@ -136,7 +136,7 @@ func (t *Transport) Start(ctx context.Context, receive Receiver) error {
 		},
 		OnConnectionDown: func() bool { t.mu.Lock(); t.generation++; t.ready = false; t.mu.Unlock(); return true },
 		OnConnectError:   func(err error) { slog.Warn("MQTT connection failed", "error", err) },
-		ClientConfig: paho.ClientConfig{ClientID: t.cfg.ClientID, OnPublishReceived: []func(paho.PublishReceived) (bool, error){
+		ClientConfig: paho.ClientConfig{ClientID: t.cfg.MQTTClientID(), OnPublishReceived: []func(paho.PublishReceived) (bool, error){
 			func(pr paho.PublishReceived) (bool, error) {
 				p := pr.Packet
 				sender, ok := t.inboxes[p.Topic]
@@ -165,6 +165,9 @@ func (t *Transport) subscribe(ctx context.Context, cm *autopaho.ConnectionManage
 	// This deployment profile uses per-agent inbox ACLs. Broker-assigned common
 	// reply topics would break the identity binding, so fail closed.
 	if ack.Properties != nil {
+		if t.cfg.ReplicaMode() && !ack.Properties.SharedSubAvailable {
+			return errors.New("broker does not support shared subscriptions")
+		}
 		if ack.Properties.ResponseInfo != "" {
 			return errors.New("broker-assigned response topics are incompatible with per-agent inboxes")
 		}
@@ -183,7 +186,7 @@ func (t *Transport) subscribe(ctx context.Context, cm *autopaho.ConnectionManage
 		end := min(start+32, len(topics))
 		subs := make([]paho.SubscribeOptions, 0, end-start)
 		for _, topic := range topics[start:end] {
-			subs = append(subs, paho.SubscribeOptions{Topic: topic, QoS: t.cfg.QoS})
+			subs = append(subs, paho.SubscribeOptions{Topic: t.cfg.InboxSubscription(topic), QoS: t.cfg.QoS})
 		}
 		callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		ack, err := cm.Subscribe(callCtx, &paho.Subscribe{Subscriptions: subs})

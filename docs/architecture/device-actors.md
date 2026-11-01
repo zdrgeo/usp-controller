@@ -492,3 +492,18 @@ or concurrent per-device ingress scheduler. It uses a fresh persisted epoch per
 new event to avoid identity collisions after restoring a snapshot. A live pinned
 Dapr/Scheduler/durable-broker qualification is still required before deployment;
 HTTP contract and fault-injection tests do not establish broker durability.
+
+
+## Phase 5 implementation status
+
+An experimental replica profile now selects MQTT shared subscriptions with unique
+per-instance client identities and identical actor-only inventory. All ingress
+still invokes Dapr; actors use the same shared-state API after relocation. The
+profile adds sampled dependency readiness, callback/dispatch gates and shutdown
+drain controls. Legacy and single-host defaults are unchanged.
+
+See [replica configuration and qualification gates](device-actor-replicas.md).
+Real MQTT survivor tests and simulated actor relocation/partition tests pass, but
+the simulated serializer does not prove live Dapr fencing. The phase-5 production
+exit gate remains open until pinned Placement/Scheduler/state-store failure drills
+establish the required state-ownership behavior and document external-send limits.

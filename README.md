@@ -190,3 +190,9 @@ reconciliation remains disabled.
 
 See the [canary configuration, API and cutover guide](docs/architecture/device-actor-canary.md)
 and [architecture proposal](docs/architecture/device-actors.md) before enabling it.
+
+
+Phase 5 adds an experimental, opt-in [replica placement profile](docs/architecture/device-actor-replicas.md)
+with MQTT shared subscriptions, actor-only inventory, dependency readiness checks
+and shutdown admission guards. Legacy remains the default; the existing K3s
+manifest remains single-replica. Live Dapr partition/failover qualification is pending.

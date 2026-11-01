@@ -95,14 +95,35 @@ func run() error {
 			}
 		}()
 	}
+	if cfg.ReplicaMode() {
+		go func() {
+			ticker := time.NewTicker(5 * time.Second)
+			defer ticker.Stop()
+			for {
+				if err := actorRuntime.RefreshPlacement(ctx); err != nil {
+					slog.Warn("replica placement readiness", "error", err)
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+				}
+			}
+		}()
+	}
 	if err := transport.Start(ctx, receive); err != nil {
 		return err
 	}
 	timeout := time.Duration(cfg.RequestTimeoutSeconds) * time.Second
-	ready := func() bool { return transport.Ready() && j.Healthy() }
+	ready := func() bool {
+		if cfg.ReplicaMode() {
+			return actorRuntime.Ready()
+		}
+		return transport.Ready() && j.Healthy()
+	}
 	var handler http.Handler = api.Handler(requester, ready, token, timeout)
 	if actorRuntime != nil {
-		handler = deviceapi.Timeout(deviceapi.Handler(handler, actorRuntime.Client, actorRuntime.Devices, token))
+		handler = actorRuntime.AdmissionGate(deviceapi.Timeout(deviceapi.Handler(handler, actorRuntime.Client, actorRuntime.Devices, token)))
 	}
 	server := &http.Server{Addr: cfg.Listen, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: timeout + 15*time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	go func() { serverErrors <- server.ListenAndServe() }()
@@ -111,6 +132,9 @@ func run() error {
 	case <-signalCtx.Done():
 	case err = <-serverErrors:
 	case err = <-transport.Errors():
+	}
+	if actorRuntime != nil {
+		actorRuntime.BeginDrain()
 	}
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), timeout+5*time.Second)
 	defer shutdownCancel()
