@@ -59,6 +59,9 @@ func eventually(t *testing.T, description string, fn func() bool) {
 
 type liveHost struct {
 	name                      string
+	placement                 *tcpPartition
+	state                     *tcpPartition
+	saves                     map[string]*heldSave
 	client                    *deviceactor.Client
 	projection                *fleet.Projection
 	reminders, events, writes atomic.Int64
@@ -79,6 +82,12 @@ func TestLiveDapr(t *testing.T) {
 		t.Helper()
 		full := network + "-" + name
 		cmd := []string{"run", "-d", "--name", full, "--network", network, "--network-alias", name}
+		if name == "redis" {
+			cmd = append(cmd, "-p", "127.0.0.1::6379")
+		}
+		if name == "placement" {
+			cmd = append(cmd, "-p", "127.0.0.1::50005")
+		}
 		cmd = append(cmd, image)
 		cmd = append(cmd, args...)
 		docker(t, cmd...)
@@ -92,7 +101,7 @@ func TestLiveDapr(t *testing.T) {
 		return full
 	}
 	redis := start("redis", "redis:7.4.2-alpine", "redis-server", "--appendonly", "yes", "--appendfsync", "always")
-	start("placement", "daprio/placement:"+daprVersion, "./placement", "--port", "50005")
+	placement := start("placement", "daprio/placement:"+daprVersion, "./placement", "--port", "50005")
 	start("scheduler", "daprio/scheduler:"+daprVersion, "./scheduler", "--port", "50006", "--etcd-data-dir", "/tmp/scheduler")
 	resources := t.TempDir()
 	for name, kind := range map[string]string{"state": "state.redis", "events": "pubsub.redis"} {
@@ -110,7 +119,20 @@ func TestLiveDapr(t *testing.T) {
 	transport := &offlineTransport{}
 	newHost := func(index int) *liveHost {
 		t.Helper()
-		h := &liveHost{}
+		h := &liveHost{saves: map[string]*heldSave{}}
+		h.placement = newTCPPartition(t, docker(t, "port", placement, "50005/tcp"))
+		h.state = newTCPPartition(t, docker(t, "port", redis, "6379/tcp"))
+		hostResources := t.TempDir()
+		for _, component := range []string{"state", "events"} {
+			b, err := os.ReadFile(filepath.Join(resources, component+".yaml"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			b = []byte(strings.ReplaceAll(string(b), "redis:6379", h.state.address()))
+			if err = os.WriteFile(filepath.Join(hostResources, component+".yaml"), b, 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
 		listener, err := net.Listen("tcp", "0.0.0.0:0")
 		if err != nil {
 			t.Fatal(err)
@@ -120,7 +142,7 @@ func TestLiveDapr(t *testing.T) {
 		// Daprd waits for the callback listener before initializing actors.
 		name := fmt.Sprintf("host%d", index)
 		full := network + "-" + name
-		args := []string{"run", "-d", "--name", full, "--network", network, "--add-host", "host.docker.internal:host-gateway", "-p", "127.0.0.1::3500", "-e", "DAPR_API_TOKEN=" + token, "-e", "APP_API_TOKEN=" + appToken, "-v", resources + ":/components:ro", "daprio/daprd:" + daprVersion, "./daprd", "--app-id", "usp-live", "--app-port", fmt.Sprint(port), "--app-channel-address", "host.docker.internal", "--placement-host-address", "placement:50005", "--scheduler-host-address", "scheduler:50006", "--resources-path", "/components", "--log-level", "warn"}
+		args := []string{"run", "-d", "--name", full, "--network", network, "--add-host", "host.docker.internal:host-gateway", "-p", "127.0.0.1::3500", "-e", "DAPR_API_TOKEN=" + token, "-e", "APP_API_TOKEN=" + appToken, "-v", hostResources + ":/components:ro", "daprio/daprd:" + daprVersion, "./daprd", "--app-id", "usp-live", "--app-port", fmt.Sprint(port), "--app-channel-address", "host.docker.internal", "--placement-host-address", h.placement.address(), "--scheduler-host-address", "scheduler:50006", "--resources-path", "/components", "--log-level", "warn"}
 		docker(t, args...)
 		h.name = full
 		t.Cleanup(func() {
@@ -140,7 +162,9 @@ func TestLiveDapr(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			actor, err := deviceactor.NewWithEvents(identity, backend, opts, transport, &deviceactor.DaprEventPublisher{Endpoint: endpoint, Token: token, Pubsub: "events", Topic: "device-events"})
+			gate := &heldSave{Backend: backend}
+			h.saves[identity.AgentID] = gate
+			actor, err := deviceactor.NewWithEvents(identity, gate, opts, transport, &deviceactor.DaprEventPublisher{Endpoint: endpoint, Token: token, Pubsub: "events", Topic: "device-events"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -272,11 +296,20 @@ func TestLiveDapr(t *testing.T) {
 		t.Fatal("admitted desired change while Redis was stopped")
 	}
 	docker(t, "start", redis)
+	for _, h := range hosts {
+		h.state.setTarget(docker(t, "port", redis, "6379/tcp"))
+	}
 	eventually(t, "state service recovery", func() bool {
 		b, err := hosts[1].client.Invoke(context.Background(), id, "SetDesired", recovery)
 		var receipt device.DesiredReceipt
 		return err == nil && json.Unmarshal(b, &receipt) == nil && receipt.Revision == 2
 	})
+	if !t.Run("owner state network partition", func(t *testing.T) { testStatePartition(t, hosts, id) }) {
+		return
+	}
+	if !t.Run("placement partition fences stale writer", func(t *testing.T) { testPlacementPartition(t, hosts, id) }) {
+		return
+	}
 	// Locate current owner by an invocation, then kill its sidecar ungracefully.
 	before := hosts[0].writes.Load()
 	invoke(hosts[1], id, "SetDesired", request)

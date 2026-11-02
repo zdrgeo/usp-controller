@@ -181,6 +181,8 @@ replace the real-device, WAN, restore and node-failure gates above.
 
 The opt-in [live Dapr suite](device-dapr-integration.md) now covers two-host
 receipt recovery, Scheduler reminders, Redis outage recovery and notification
-export into fleet projections against real services. This local test does not
+export into fleet projections against real services. Owner-only Redis and
+Placement connection cuts now check failed admission, a delayed stale snapshot
+and state stability after healing. This bounded local test does not
 close the asymmetric-partition, stale-writer, real-device or disaster-recovery
 gates above. Legacy remains the default.

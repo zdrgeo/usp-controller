@@ -9,7 +9,7 @@ production configuration unchanged. It does not connect to MQTT or real devices.
 Start Docker Desktop (macOS) or Docker Engine (Linux), then run from the repository:
 
 ```sh
-USP_TEST_DAPR=1 go test -race -count=1 -v -timeout=6m ./internal/integration
+USP_TEST_DAPR=1 go test -race -count=1 -v -timeout=8m ./internal/integration
 ```
 
 The normal `go test ./...` run skips this test. Explicit opt-in fails if Docker or
@@ -21,12 +21,14 @@ firewall that permits container-to-host callbacks. macOS Docker Desktop was test
 Linux routing is supported by the fixture but has not been qualified here.
 
 Each run creates a uniquely named private Docker network, five disposable
-containers, temporary component files and two independent fleet directories.
+containers, temporary component files, per-host TCP fault proxies and two
+independent fleet directories.
 Sidecar HTTP ports are dynamically assigned and published only on loopback.
 Callback listeners bind a random host port on all interfaces so containers can
 reach them. They require a fixed **test-only** callback token; use this fixture
-only on a development machine. Redis, Placement and Scheduler ports are not
-published on the host. No existing deployment or state store is targeted.
+only on a development machine. Redis and Placement use dynamically assigned loopback ports for the fault
+proxies; Scheduler is not published on the host. Each proxy binds a random host
+port for container access and forwards only to its test service. No existing deployment or state store is targeted.
 
 Normal completion and test failures remove the containers, network and temporary
 files. Images remain cached. Force-killing the test process can bypass cleanup;
@@ -55,10 +57,11 @@ Failure output includes container logs. Do not run against a production Docker h
   remains disabled in the test policy.
 
 This is a single-machine, real-runtime integration check, not qualification for
-production writes. It does **not** establish stale-writer fencing during asymmetric
+production writes. It does **not** establish universal stale-writer fencing during asymmetric
 network partitions, actual command-send crash recovery, multi-node failures,
 Scheduler/Placement quorum loss, backups/restores, device behavior, or capacity.
-Those remain rollout gates. Existing simulated tests still cover application
+Those remain rollout gates; the bounded scenarios below narrow only the local
+connection-loss coverage. Existing simulated tests still cover application
 uncertainty rules; they complement this test rather than establish distributed
 fencing. The test uses the production actor backend/host/client, outbox publisher
 and fleet callback, but does not boot the full Controller/MQTT process.
@@ -79,3 +82,47 @@ References: [Dapr Docker hosting](https://docs.dapr.io/operations/hosting/self-h
 
 On 2026-11-02, the race-enabled live suite passed with Dapr 1.19.1, Redis 7.4.2 and
 Docker Desktop Engine 29.9.2 on macOS. No production runtime defaults were changed.
+
+## Network partitions and delayed state writers
+
+The same opt-in run now includes these live subtests. The fault injector closes
+existing TCP streams and rejects reconnections until healed. It is a real network
+boundary around the selected host's dependency, not a mock error from the actor
+backend. Its own race-enabled test verifies established-stream closure, rejected
+reconnects and recovery.
+
+1. **Owner-only Redis route loss.** Identify the actor owner through a real
+   invocation, cut that host's Redis proxy, and submit the same desired request
+   through both sidecars. Neither may acknowledge success. An independent Redis
+   PING through the unaffected host proves that the service itself is healthy.
+   Heal the route and retry the stable request ID; exactly the expected desired
+   revision must be returned.
+2. **Owner-only Placement loss with a delayed writer.** Hold a real actor snapshot
+   immediately before its backend save, then close only that sidecar's Placement
+   stream. Require the other host to commit a different value at the next
+   revision before releasing the old write. While isolated, a new invocation
+   through the old sidecar must fail without entering another mutation callback;
+   a Redis PING proves its state path is still reachable.
+3. **Delayed-write and recovery assertions.** Release the old snapshot using the
+   production Dapr backend with a fresh cancellation context. This deliberately
+   simulates a storage call that outlives its original invocation; the injection
+   exists only in tests. It must not succeed. Check the replacement's exact value
+   and revision, reconnect Placement, then query both sidecars repeatedly for ten
+   seconds. A late overwrite or inconsistent state fails the test.
+
+The pinned Dapr 1.19.1 run returned a **backend timeout** for the delayed storage
+call while Placement was disconnected. This is not an explicit stale-epoch
+rejection. The observed result is blocked admission and no stale commit during
+this fault/recovery window. Dapr's implementation gates actor-state transactions
+on Placement and checks local actor existence; this adapter does not provide a
+storage-enforced, monotonic fencing token. See the pinned
+[state transaction implementation](https://github.com/dapr/dapr/blob/v1.19.1/pkg/actors/state/state.go)
+and [Placement disconnect handling](https://github.com/dapr/dapr/blob/v1.19.1/pkg/actors/internal/placement/loops/placement/placement.go).
+
+Do not interpret passing these tests as proof of fencing in all failure modes.
+The proxies model detected connection loss, not silent one-way packet loss or a
+half-open connection that continues to accept writes. They do not pause a Redis
+transaction after server acceptance, test an uncancellable command already sent
+to a device, or establish safety across restored state/ownership epochs. Those
+require additional deployment-level qualification and potentially stronger
+fencing. Legacy remains the default; no runtime guard is relaxed by this suite.
