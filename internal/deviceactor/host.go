@@ -213,6 +213,12 @@ func respond(w http.ResponseWriter, v any, err error) {
 		case errors.Is(err, ErrNotFound):
 			status = http.StatusNotFound
 		}
+		if status != http.StatusInternalServerError {
+			// Dapr wraps non-2xx actor callback responses as HTTP 500. Carry
+			// known domain errors in a typed successful transport envelope.
+			writeJSON(w, map[string]int{"device_actor_error": status})
+			return
+		}
 		http.Error(w, http.StatusText(status), status)
 		return
 	}

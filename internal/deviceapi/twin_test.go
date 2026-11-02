@@ -31,21 +31,14 @@ type hostInvoker struct {
 
 func (i *hostInvoker) Invoke(ctx context.Context, id device.DeviceIdentity, method string, input any) (json.RawMessage, error) {
 	i.calls++
-	b, _ := json.Marshal(input)
-	r := httptest.NewRequest("PUT", "/actors/DeviceActor/"+deviceactor.ActorID(id)+"/method/"+method, strings.NewReader(string(b))).WithContext(ctx)
-	r.Header.Set("dapr-api-token", i.token)
-	w := httptest.NewRecorder()
-	i.host.ServeHTTP(w, r)
-	switch w.Code {
-	case 200:
-		return w.Body.Bytes(), nil
-	case 400:
-		return nil, deviceactor.ErrInvalid
-	case 409:
-		return nil, deviceactor.ErrConflict
-	default:
-		return nil, deviceactor.ErrDisabled
-	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Method = http.MethodPut
+		r.URL.Path = strings.TrimPrefix(r.URL.Path, "/v1.0")
+		i.host.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+	client := deviceactor.Client{Endpoint: server.URL, Token: i.token, HTTP: server.Client()}
+	return client.Invoke(ctx, id, method, input)
 }
 func TestTwinAPIAuthSiteCASAndStatus(t *testing.T) {
 	id := device.DeviceIdentity{Tenant: "tenant", ControllerID: "controller", AgentID: "device"}

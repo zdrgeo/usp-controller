@@ -120,7 +120,7 @@ func TestLiveDapr(t *testing.T) {
 	identities := []device.DeviceIdentity{id, other}
 	inventory := map[string]device.DeviceIdentity{id.AgentID: id, other.AgentID: other}
 	for _, dependency := range []string{"state", "placement"} {
-		for _, mode := range []string{"outbound", "inbound", "half-open"} {
+		for _, mode := range []string{"control", "outbound", "inbound", "half-open"} {
 			identity := id
 			identity.AgentID = "packet-" + dependency + "-" + mode
 			identities = append(identities, identity)
@@ -170,7 +170,7 @@ func TestLiveDapr(t *testing.T) {
 		actors := []*deviceactor.Actor{}
 		for _, identity := range identities {
 			h.mutations[deviceactor.ActorID(identity)] = new(atomic.Int64)
-			backend, err := deviceactor.NewDaprBackend(endpoint, nil, token, identity, time.Second, opts.MaxBytes)
+			backend, err := deviceactor.NewFencedDaprBackend(endpoint, nil, token, identity, time.Second, opts.MaxBytes, "state")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -243,6 +243,9 @@ func TestLiveDapr(t *testing.T) {
 		return h
 	}
 	hosts := []*liveHost{newHost(0), newHost(1)}
+	if !t.Run("fenced snapshot compare and set", func(t *testing.T) { testLiveSnapshotCAS(t, hosts, id) }) {
+		return
+	}
 	unauthorized := *hosts[0].client
 	unauthorized.Token = "wrong"
 	if _, err := unauthorized.Invoke(context.Background(), id, "GetTwin", nil); err == nil {
@@ -329,7 +332,7 @@ func TestLiveDapr(t *testing.T) {
 		return
 	}
 	for _, dependency := range []string{"state", "placement"} {
-		for _, mode := range []string{"outbound", "inbound", "half-open"} {
+		for _, mode := range []string{"control", "outbound", "inbound", "half-open"} {
 			identity := id
 			identity.AgentID = "packet-" + dependency + "-" + mode
 			t.Run("packet loss/"+dependency+"/"+mode, func(t *testing.T) { testPacketLoss(t, hosts, identity, dependency, mode) })

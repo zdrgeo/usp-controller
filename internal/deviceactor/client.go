@@ -65,5 +65,24 @@ func (c *Client) Invoke(ctx context.Context, id device.DeviceIdentity, method st
 			return nil, fmt.Errorf("actor invocation HTTP %d", resp.StatusCode)
 		}
 	}
+	var domain struct {
+		Code int `json:"device_actor_error"`
+	}
+	if json.Unmarshal(b, &domain) == nil && domain.Code != 0 {
+		switch domain.Code {
+		case 400:
+			return nil, ErrInvalid
+		case 404:
+			return nil, ErrNotFound
+		case 409:
+			return nil, ErrConflict
+		case 429:
+			return nil, ErrCapacity
+		case 503:
+			return nil, ErrDisabled
+		default:
+			return nil, fmt.Errorf("invalid actor error envelope")
+		}
+	}
 	return b, nil
 }

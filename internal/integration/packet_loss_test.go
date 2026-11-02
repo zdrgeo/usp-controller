@@ -137,7 +137,9 @@ func testPacketLoss(t *testing.T, hosts []*liveHost, id device.DeviceIdentity, d
 	if established == "" {
 		t.Fatal("fault requires an established dependency connection")
 	}
-	fault.install(t, mode)
+	if mode != "control" {
+		fault.install(t, mode)
+	}
 	defer fault.heal(t)
 	// Keep the socket open long enough to observe a true black hole. Placement
 	// probes begin only after a further heartbeat-loss interval, so they do not
@@ -146,7 +148,7 @@ func testPacketLoss(t *testing.T, hosts []*liveHost, id device.DeviceIdentity, d
 	if mode == "half-open" && !sameConnection(established, fault.established(t)) {
 		t.Fatal("no original ESTABLISHED connection survived the black-hole interval")
 	}
-	if dependency == "placement" {
+	if dependency == "placement" && mode != "control" {
 		time.Sleep(10 * time.Second)
 	}
 
@@ -182,10 +184,12 @@ func testPacketLoss(t *testing.T, hosts []*liveHost, id device.DeviceIdentity, d
 			}
 		}
 	}
-	if dependency == "state" && successes != 0 {
+	if dependency == "state" && mode != "control" && successes != 0 {
 		t.Fatal("state-path packet loss acknowledged admission")
 	}
-	fault.assertDrops(t)
+	if mode != "control" {
+		fault.assertDrops(t)
+	}
 	if successes > 1 {
 		t.Fatal("conflicting revisions admitted during packet loss")
 	}
@@ -265,5 +269,42 @@ func TestSocketTupleComparison(t *testing.T) {
 	}
 	if sameConnection("0 0 10.0.0.1:123 10.0.0.2:456", "0 0 10.0.0.1:124 10.0.0.2:456") {
 		t.Fatal("new socket mistaken for half-open socket")
+	}
+}
+
+func testLiveSnapshotCAS(t *testing.T, hosts []*liveHost, id device.DeviceIdentity) {
+	id.AgentID = "storage-cas-probe"
+	backends := make([]*deviceactor.FencedDaprBackend, 2)
+	for i, h := range hosts {
+		b, e := deviceactor.NewFencedDaprBackend(h.client.Endpoint, nil, token, id, time.Second, 1<<20, "state")
+		if e != nil {
+			t.Fatal(e)
+		}
+		data, e := b.Load(context.Background())
+		if e != nil || len(data) != 0 {
+			t.Fatalf("expected empty snapshot: %s %v", data, e)
+		}
+		backends[i] = b
+	}
+	if e := backends[0].Save(context.Background(), []byte(`{"n":1}`)); e != nil {
+		t.Fatal(e)
+	}
+	if e := backends[1].Save(context.Background(), []byte(`{"n":2}`)); e == nil {
+		t.Fatal("two initializers accepted", e)
+	}
+	if _, e := backends[1].Load(context.Background()); e != nil {
+		t.Fatal(e)
+	}
+	if e := backends[0].Save(context.Background(), []byte(`{"n":3}`)); e != nil {
+		t.Fatal(e)
+	}
+	if e := backends[1].Save(context.Background(), []byte(`{"n":4}`)); !errors.Is(e, deviceactor.ErrConflict) {
+		t.Fatal("stale existing version accepted", e)
+	}
+	for _, b := range backends {
+		data, e := b.Load(context.Background())
+		if e != nil || string(data) != `{"n":3}` {
+			t.Fatalf("snapshot changed after stale write: %s %v", data, e)
+		}
 	}
 }

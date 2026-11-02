@@ -98,7 +98,14 @@ func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, 
 		if err != nil {
 			return fail(err)
 		}
-		actor, err := deviceactor.NewWithEvents(identity, backend, opts, transport{mqtt: mqtt, topic: cfg.Agents[id].Topic, qos: cfg.QoS, available: rt.DispatchReady}, &deviceactor.DaprEventPublisher{Endpoint: a.DaprURL, Token: apiToken, Pubsub: a.EventPubsub, Topic: a.EventTopic})
+		var stateBackend deviceactor.Backend = backend
+		if a.Replica != nil {
+			stateBackend, err = deviceactor.NewFencedDaprBackend(a.DaprURL, nil, apiToken, identity, 10*time.Second, opts.MaxBytes, a.Replica.StateStore)
+			if err != nil {
+				return fail(err)
+			}
+		}
+		actor, err := deviceactor.NewWithEvents(identity, stateBackend, opts, transport{mqtt: mqtt, topic: cfg.Agents[id].Topic, qos: cfg.QoS, available: rt.DispatchReady}, &deviceactor.DaprEventPublisher{Endpoint: a.DaprURL, Token: apiToken, Pubsub: a.EventPubsub, Topic: a.EventTopic})
 		if err != nil {
 			return fail(err)
 		}

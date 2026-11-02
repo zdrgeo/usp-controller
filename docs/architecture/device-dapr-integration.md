@@ -1,10 +1,10 @@
 # Live Dapr integration tests
 
-**Qualification status: blocked.** The one-way Placement packet-loss extension
-has observed two successful receipts for competing mutations at the same expected
-revision. The safety assertion deliberately remains failing when this occurs;
-this is not an approved actor-write deployment profile. Legacy remains the default.
-See the packet-loss findings below.
+**Snapshot concurrency repair:** replica snapshots now use conditional state
+writes, and typed conflict responses survive Dapr's callback wrapping. The
+historical packet-loss failure below remains recorded. See the
+[repair and migration requirements](device-state-fencing.md). This does not approve
+production device writes or close the remaining rollout gates.
 
 The opt-in test in `internal/integration/dapr_test.go` runs real Dapr 1.19.1
 sidecars, Placement, Scheduler and Redis 7.4.2. It leaves the legacy default and
@@ -117,12 +117,12 @@ reconnects and recovery.
    and revision, reconnect Placement, then query both sidecars repeatedly for ten
    seconds. A late overwrite or inconsistent state fails the test.
 
-The pinned Dapr 1.19.1 run returned a **backend timeout** for the delayed storage
-call while Placement was disconnected. This is not an explicit stale-epoch
-rejection. The observed result is blocked admission and no stale commit during
+Before the snapshot repair, the pinned Dapr 1.19.1 run returned a **backend
+timeout** for the delayed storage call while Placement was disconnected. With
+conditional snapshots, the delayed write instead returns a conflict. The historical timeout was not an explicit stale-epoch rejection. The observed result is blocked admission and no stale commit during
 this fault/recovery window. Dapr's implementation gates actor-state transactions
-on Placement and checks local actor existence; this adapter does not provide a
-storage-enforced, monotonic fencing token. See the pinned
+on Placement and checks local actor existence; the old adapter had no conditional-write protection. The repaired backend
+uses version-conditional snapshots, not an ownership-epoch lease. See the pinned
 [state transaction implementation](https://github.com/dapr/dapr/blob/v1.19.1/pkg/actors/state/state.go)
 and [Placement disconnect handling](https://github.com/dapr/dapr/blob/v1.19.1/pkg/actors/internal/placement/loops/placement/placement.go).
 
@@ -201,8 +201,9 @@ instead failed receipt recovery within the sixty-second observation bound. These
 results are timing-dependent; a later passing run does not erase the observed
 safety failure.
 
-The assertions remain strict. This commit adds qualification tests and evidence,
-not a runtime fencing fix. Each scenario uses a separate provisioned device identity. Owner tracking is
+The historical assertions remain strict. They originally exposed the defect;
+the subsequent [snapshot repair](device-state-fencing.md) addresses it without
+weakening those assertions. Each scenario uses a separate provisioned device identity. Owner tracking is
 per device. The full run and a follow-up packet-only run produced the same safety
 failure; the ordinary suite (which skips live Docker tests) and `go vet` passed.
 
@@ -224,9 +225,37 @@ established socket tuple before the twelve-second loss interval. Recovery checks
 for a failing conflict scenario are not reported as passed: that subtest fails
 immediately, heals its rules, and lets the remaining independent scenarios run.
 
-The result is consistent with the existing warning that Placement turn ownership
+The historical result is consistent with the existing warning that Placement turn ownership
 is not a storage-enforced monotonic fence in this adapter. It does not establish
-which Dapr/component change would resolve the issue. Before enabling the replica
-write profile, investigate ownership detection and enforce an appropriate storage
-or execution fence; rerun these tests and the remaining deployment gates. Do not
+which Dapr/component change would resolve the issue. The snapshot repair supplies storage concurrency protection. Before enabling the
+replica write profile, complete the remaining deployment and external-effect gates. Do not
 weaken the compare-and-set assertion or convert this failure into an expected pass.
+
+## Snapshot repair validation
+
+The repaired fixture uses the same fenced backend as replica runtime mode and
+retains the original conflicting-receipt assertions. Added healthy-network controls
+require stable conflict recovery without injected faults. A live storage probe
+loads the same absent key through both sidecars, permits one creator, rejects the
+other, and then rejects a stale existing version. Unit coverage includes migration
+seeding, missing ETags, ambiguous writes, version invalidation and avoiding reuse
+of another writer's version after read-back.
+
+The previous failure table is historical evidence, not the expected result of the
+repaired suite. Replica storage migration is a quiesced operation; see the linked
+repair guide before deploying this change.
+
+The complete repaired live run passed with Dapr 1.19.1 and Redis 7.4.2 in about
+188 seconds, with the race detector enabled. Results after the repair:
+
+| Check | Result |
+|---|---|
+| Competing first creation and stale existing version | Passed |
+| Owner-only Redis/Placement cuts and delayed stale write | Passed |
+| Healthy-network state/Placement controls | Passed |
+| Redis outbound, inbound and half-open packet loss | Passed |
+| Placement outbound, inbound and half-open packet loss | Passed |
+| Receipt recovery, reminders, events/fleet and owner loss | Passed |
+
+The full ordinary race-enabled suite and static checks also passed. The historical
+failure evidence remains above to explain why the storage protocol changed.
