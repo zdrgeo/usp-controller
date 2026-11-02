@@ -40,7 +40,9 @@ Required credentials:
 
 - `USP_API_TOKEN`: existing management API bearer token, at least 32 characters.
 - `DAPR_APP_TOKEN`: at least 32 characters, shared by the app callback listener and
-  Dapr's app-token configuration. All callback routes require it.
+  Dapr's app-token configuration. For a self-hosted sidecar, set its
+  `APP_API_TOKEN` to this value; `DAPR_APP_TOKEN` is the Controller's own variable.
+  All callback routes require it.
 - `DAPR_API_TOKEN`: supplied to outbound sidecar calls when sidecar API token
   authentication is configured. It is a separate credential from the app token.
 

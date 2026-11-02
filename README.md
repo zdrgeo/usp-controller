@@ -208,3 +208,6 @@ An optional [per-site fleet projection](docs/architecture/device-fleet-projectio
 now provides persistent, eventually consistent status pages and summaries without
 query-time actor fan-out. It uses notification invalidations plus bounded periodic
 status reads, labels stale/missing data, and stays disabled unless configured.
+
+Live Dapr coverage is opt-in: see the [isolated integration test guide](docs/architecture/device-dapr-integration.md)
+for prerequisites, the run command and remaining qualification limits.

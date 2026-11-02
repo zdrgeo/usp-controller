@@ -176,3 +176,11 @@ Automated tests cover policy validation/filtering, site/auth/allowlist/CAS rules
 offline coalescing, observation freshness, superseded queued work, old responses,
 ambiguous attempts across restart, and default-disabled behavior. They do not
 replace the real-device, WAN, restore and node-failure gates above.
+
+## Live runtime integration coverage
+
+The opt-in [live Dapr suite](device-dapr-integration.md) now covers two-host
+receipt recovery, Scheduler reminders, Redis outage recovery and notification
+export into fleet projections against real services. This local test does not
+close the asymmetric-partition, stale-writer, real-device or disaster-recovery
+gates above. Legacy remains the default.
