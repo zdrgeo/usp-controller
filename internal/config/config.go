@@ -21,7 +21,29 @@ type Replica struct {
 	StateStore  string `json:"state_store"`
 }
 
+// FleetProjection is a local, rebuildable status view; it is never command state.
+type FleetProjection struct {
+	Directory      string `json:"directory"`
+	RefreshSeconds int    `json:"refresh_seconds"`
+	StaleSeconds   int    `json:"stale_seconds"`
+	Workers        int    `json:"workers"`
+}
+
+func (f FleetProjection) Normalized() FleetProjection {
+	if f.RefreshSeconds == 0 {
+		f.RefreshSeconds = 60
+	}
+	if f.StaleSeconds == 0 {
+		f.StaleSeconds = 180
+	}
+	if f.Workers == 0 {
+		f.Workers = 4
+	}
+	return f
+}
+
 type ActorCanary struct {
+	Fleet          *FleetProjection   `json:"fleet,omitempty"`
 	Twin           *device.TwinPolicy `json:"twin,omitempty"`
 	Replica        *Replica           `json:"replica,omitempty"`
 	EventPubsub    string             `json:"event_pubsub"`
@@ -139,6 +161,12 @@ func (c Config) Validate() error {
 		}
 		if err := a.Twin.Validate(); err != nil {
 			return err
+		}
+	}
+	if a := c.ActorCanary; a != nil && a.Fleet != nil {
+		f := a.Fleet.Normalized()
+		if !a.Enabled || a.Twin == nil || f.Directory == "" || len(a.Devices) > 4096 || f.RefreshSeconds < 5 || f.RefreshSeconds > 3600 || f.StaleSeconds < f.RefreshSeconds || f.StaleSeconds > 86400 || f.Workers < 1 || f.Workers > 16 {
+			return fmt.Errorf("fleet projection requires actor/twin mode, a directory, <=4096 devices, refresh 5–3600s, stale >= refresh and <=86400s, and 1–16 workers")
 		}
 	}
 	if a := c.ActorCanary; a != nil && a.Replica != nil {

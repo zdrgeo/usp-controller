@@ -202,3 +202,9 @@ The [phase-6 managed twin foundation](docs/architecture/device-actor-rollout.md)
 adds an optional site-aware twin/desired/status API, exact managed-path policies
 and one-attempt-per-revision reconciliation. No automatic reconciliation is enabled
 by default. Real-device rollout and disaster-recovery qualification remain pending.
+
+
+An optional [per-site fleet projection](docs/architecture/device-fleet-projections.md)
+now provides persistent, eventually consistent status pages and summaries without
+query-time actor fan-out. It uses notification invalidations plus bounded periodic
+status reads, labels stale/missing data, and stays disabled unless configured.

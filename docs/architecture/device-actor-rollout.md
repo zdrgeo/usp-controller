@@ -2,7 +2,8 @@
 
 Status: opt-in application foundation, **not production rollout approval**. Legacy
 is still the default. Live phase-5 Dapr fencing/partition qualification, real-device
-canaries, fleet projections and site disaster-recovery drills remain outstanding.
+canaries and site disaster-recovery drills remain outstanding. Optional per-site
+fleet status projections are described in the [projection guide](device-fleet-projections.md).
 No device, broker, database or deployment is changed by adding this code.
 
 ## Enable a reviewed single-model cohort
@@ -141,8 +142,9 @@ of immediate sending; explicit commands, MQTT or export failures can delay it.
 
 Use these bounded per-device reads to inspect canaries and monitor receipt/command
 capacity, pending-event age and unknown outcomes. There is no all-device fanout on
-a health request. Prometheus metrics, a persistent fleet projection consumer,
-global site routing and value redaction remain future work. A fleet projection
+a health request. An optional persistent [fleet status projector](device-fleet-projections.md) consumes
+notification hints and refreshes these diagnostics. Prometheus metrics, global
+site routing and value redaction remain future work. A fleet projection
 must be explicitly eventually consistent and must never claim to be the actor's
 current authoritative state.
 

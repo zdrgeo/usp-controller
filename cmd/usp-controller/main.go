@@ -18,6 +18,7 @@ import (
 	"example.com/usp-controller/internal/config"
 	"example.com/usp-controller/internal/controller"
 	"example.com/usp-controller/internal/deviceapi"
+	"example.com/usp-controller/internal/fleet"
 	"example.com/usp-controller/internal/journal"
 	"example.com/usp-controller/internal/mqtt"
 )
@@ -58,6 +59,7 @@ func run() error {
 	var receive mqtt.Receiver = c.Receive
 	var actorRuntime *canary.Runtime
 	var callback *http.Server
+	var projection *fleet.Projection
 	serverErrors := make(chan error, 2)
 	if cfg.ActorCanary != nil && cfg.ActorCanary.Enabled {
 		actorRuntime, err = canary.New(cfg, transport, c, os.Getenv("DAPR_APP_TOKEN"), os.Getenv("DAPR_API_TOKEN"))
@@ -65,6 +67,29 @@ func run() error {
 			return err
 		}
 		defer actorRuntime.Close()
+		if configured := cfg.ActorCanary.Fleet; configured != nil {
+			f := configured.Normalized()
+			projection, err = fleet.Open(fleet.Options{Directory: f.Directory, SiteID: cfg.ActorCanary.Twin.SiteID, RefreshInterval: time.Duration(f.RefreshSeconds) * time.Second, StaleAfter: time.Duration(f.StaleSeconds) * time.Second, Workers: f.Workers, Now: time.Now}, actorRuntime.Devices, actorRuntime.Client)
+			if err != nil {
+				return err
+			}
+			actorRuntime.Host = projection.Callback(actorRuntime.Host, os.Getenv("DAPR_APP_TOKEN"), cfg.ActorCanary.EventPubsub, cfg.ActorCanary.EventTopic)
+			projectionCtx, stopProjection := context.WithCancel(ctx)
+			projectionDone := make(chan struct{})
+			go func() {
+				defer close(projectionDone)
+				if err := projection.Run(projectionCtx); err != nil {
+					slog.Error("fleet projection stopped", "error", err)
+				}
+			}()
+			defer func() {
+				stopProjection()
+				<-projectionDone
+				if err := projection.Close(); err != nil {
+					slog.Warn("fleet projection close", "error", err)
+				}
+			}()
+		}
 		listener, err := net.Listen("tcp", cfg.ActorCanary.CallbackListen)
 		if err != nil {
 			return err
@@ -128,7 +153,11 @@ func run() error {
 			opts.SiteID = policy.SiteID
 			opts.TwinEnabled = true
 		}
-		handler = actorRuntime.AdmissionGate(deviceapi.Timeout(deviceapi.Handler(handler, actorRuntime.Client, actorRuntime.Devices, token, opts)))
+		handler = deviceapi.Timeout(deviceapi.Handler(handler, actorRuntime.Client, actorRuntime.Devices, token, opts))
+		if projection != nil {
+			handler = projection.Handler(handler, token)
+		}
+		handler = actorRuntime.AdmissionGate(handler)
 	}
 	server := &http.Server{Addr: cfg.Listen, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: timeout + 15*time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	go func() { serverErrors <- server.ListenAndServe() }()

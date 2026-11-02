@@ -519,6 +519,17 @@ for convergence. Schema 3 preserves reconciliation provenance. Legacy remains
 the default; reconciliation is separately disabled unless explicitly configured.
 
 This starts phase 6 but does not complete its production exit gate. Global site
-routing, fleet projections, production telemetry, retention and real-device/WAN/
+routing, production telemetry, retention and real-device/WAN/
 restore/node-loss qualification remain outstanding. The rollout guide records
 those limits and required operator decisions.
+
+
+### Phase 6 fleet projection continuation
+
+The optional [per-site fleet projection](device-fleet-projections.md) materializes
+value-free actor status into bounded local files. It consumes durable notification
+hints with a bounded deduplication window and refreshes through GetStatus using
+bounded workers plus periodic fallback. Queries never fan out to actors, and mark
+stale/unavailable rows explicitly. Replicas maintain independent eventually
+consistent views; this is not a shared command-claiming store or global directory.
+Legacy and existing canary behavior remain unchanged when the feature is omitted.
