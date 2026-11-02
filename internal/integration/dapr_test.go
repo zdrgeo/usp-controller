@@ -62,6 +62,7 @@ type liveHost struct {
 	placement                 *tcpPartition
 	state                     *tcpPartition
 	saves                     map[string]*heldSave
+	mutations                 map[string]*atomic.Int64
 	client                    *deviceactor.Client
 	projection                *fleet.Projection
 	reminders, events, writes atomic.Int64
@@ -116,10 +117,20 @@ func TestLiveDapr(t *testing.T) {
 	id := device.DeviceIdentity{Tenant: "test", ControllerID: "live", AgentID: "device-1"}
 	other := id
 	other.AgentID = "device-2"
+	identities := []device.DeviceIdentity{id, other}
+	inventory := map[string]device.DeviceIdentity{id.AgentID: id, other.AgentID: other}
+	for _, dependency := range []string{"state", "placement"} {
+		for _, mode := range []string{"outbound", "inbound", "half-open"} {
+			identity := id
+			identity.AgentID = "packet-" + dependency + "-" + mode
+			identities = append(identities, identity)
+			inventory[identity.AgentID] = identity
+		}
+	}
 	transport := &offlineTransport{}
 	newHost := func(index int) *liveHost {
 		t.Helper()
-		h := &liveHost{saves: map[string]*heldSave{}}
+		h := &liveHost{saves: map[string]*heldSave{}, mutations: map[string]*atomic.Int64{}}
 		h.placement = newTCPPartition(t, docker(t, "port", placement, "50005/tcp"))
 		h.state = newTCPPartition(t, docker(t, "port", redis, "6379/tcp"))
 		hostResources := t.TempDir()
@@ -157,7 +168,8 @@ func TestLiveDapr(t *testing.T) {
 		opts := deviceactor.DefaultOptions()
 		opts.Policy = &device.TwinPolicy{SiteID: "test-site", CommandTimeoutSeconds: 30, Paths: map[string]device.ManagedPath{"Device.Test.Value": {Type: "string", Writable: true}}}
 		actors := []*deviceactor.Actor{}
-		for _, identity := range []device.DeviceIdentity{id, other} {
+		for _, identity := range identities {
+			h.mutations[deviceactor.ActorID(identity)] = new(atomic.Int64)
 			backend, err := deviceactor.NewDaprBackend(endpoint, nil, token, identity, time.Second, opts.MaxBytes)
 			if err != nil {
 				t.Fatal(err)
@@ -174,7 +186,7 @@ func TestLiveDapr(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		p, err := fleet.Open(fleet.Options{Directory: t.TempDir(), SiteID: "test-site", RefreshInterval: 5 * time.Second, StaleAfter: 30 * time.Second, Workers: 2, Now: time.Now}, map[string]device.DeviceIdentity{id.AgentID: id, other.AgentID: other}, h.client)
+		p, err := fleet.Open(fleet.Options{Directory: t.TempDir(), SiteID: "test-site", RefreshInterval: 5 * time.Second, StaleAfter: 30 * time.Second, Workers: 2, Now: time.Now}, inventory, h.client)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -203,6 +215,12 @@ func TestLiveDapr(t *testing.T) {
 			}
 			if strings.HasSuffix(r.URL.Path, "/SetDesired") {
 				h.writes.Add(1)
+				parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+				if len(parts) > 2 {
+					if count := h.mutations[parts[2]]; count != nil {
+						count.Add(1)
+					}
+				}
 			}
 			callback.ServeHTTP(w, r)
 		})}
@@ -309,6 +327,13 @@ func TestLiveDapr(t *testing.T) {
 	}
 	if !t.Run("placement partition fences stale writer", func(t *testing.T) { testPlacementPartition(t, hosts, id) }) {
 		return
+	}
+	for _, dependency := range []string{"state", "placement"} {
+		for _, mode := range []string{"outbound", "inbound", "half-open"} {
+			identity := id
+			identity.AgentID = "packet-" + dependency + "-" + mode
+			t.Run("packet loss/"+dependency+"/"+mode, func(t *testing.T) { testPacketLoss(t, hosts, identity, dependency, mode) })
+		}
 	}
 	// Locate current owner by an invocation, then kill its sidecar ungracefully.
 	before := hosts[0].writes.Load()

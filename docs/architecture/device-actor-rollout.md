@@ -1,6 +1,9 @@
 # Phase 6 foundation: managed twins and conservative reconciliation
 
-Status: opt-in application foundation, **not production rollout approval**. Legacy
+Status: opt-in application foundation, **not production rollout approval**. The live
+one-way Placement packet-loss tests have observed conflicting successful receipts
+at one desired revision; replica write qualification is blocked pending a fencing
+fix. See the [recorded finding](device-dapr-integration.md#packet-loss-finding-recorded-on-2026-11-02). Legacy
 is still the default. Live phase-5 Dapr fencing/partition qualification, real-device
 canaries and site disaster-recovery drills remain outstanding. Optional per-site
 fleet status projections are described in the [projection guide](device-fleet-projections.md).
@@ -183,6 +186,8 @@ The opt-in [live Dapr suite](device-dapr-integration.md) now covers two-host
 receipt recovery, Scheduler reminders, Redis outage recovery and notification
 export into fleet projections against real services. Owner-only Redis and
 Placement connection cuts now check failed admission, a delayed stale snapshot
-and state stability after healing. This bounded local test does not
+and state stability after healing. Packet-filter scenarios also cover one-way
+loss and established connections with a black-holed path, with bounded recovery
+checks. This local test does not
 close the asymmetric-partition, stale-writer, real-device or disaster-recovery
 gates above. Legacy remains the default.
