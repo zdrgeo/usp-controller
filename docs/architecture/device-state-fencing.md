@@ -83,3 +83,39 @@ Real-device, restore and deployment-level qualification gates remain in force.
 
 See the [live integration guide](device-dapr-integration.md) for packet-loss evidence
 and [Dapr state concurrency semantics](https://docs.dapr.io/reference/api/state_api/).
+
+## Live migration and restore coverage
+
+The opt-in live suite now builds a schema-3 snapshot through the Actor APIs with
+both twin revisions, a queued command, stable receipts, a notification inbox and
+an unexported outbox event. It seeds the pinned Redis legacy actor key offline and
+verifies that Dapr's legacy reader returns the complete snapshot. Two fenced
+backends on separate sidecars load that seed; only one conditional initializer
+succeeds. Duplicate requests retain their receipts without appending queue or
+outbox entries, and later fenced mutations leave the legacy copy unchanged.
+
+The restore exercise copies the authoritative Redis key, then uses Redis
+`DUMP`/`RESTORE` to replace its serialized value **including version metadata**.
+After discarding all writers, fresh backends recover the complete backup, retain
+idempotency and can commit subsequent mutations visible through either sidecar.
+An invalid authoritative value fails closed instead of falling back to legacy.
+This is a per-snapshot, quiesced restore test on disposable Redis, not a site backup,
+Scheduler/pubsub restore or a cross-system recovery procedure.
+
+Two negative characterizations make the deployment restriction executable:
+
+- Restoring an old Redis version while a writer still holds that version permits
+  that writer to save again (version reuse, or ABA). Ordinary stale writes are
+  rejected before the restore. A restore is therefore **not a fencing event**;
+  every writer must be retired before restoring, and admission must stay stopped
+  until recovery is validated.
+- Removing the authoritative key causes a fresh load to import the stale legacy
+  snapshot. Missing fenced keys cannot distinguish an initial migration from an
+  incomplete restore. Restore inventories must include every authoritative key;
+  do not delete these keys as a recovery shortcut.
+
+These passing characterization tests document unsupported recovery behavior;
+they do not make online rollback or incomplete restores safe. Restoring an older
+backup can also discard receipts for externally completed work. Resolve that
+uncertainty before resuming device traffic; the suite does not replay commands or
+connect to real devices. Legacy remains the default runtime.

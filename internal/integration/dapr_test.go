@@ -246,6 +246,9 @@ func TestLiveDapr(t *testing.T) {
 	if !t.Run("fenced snapshot compare and set", func(t *testing.T) { testLiveSnapshotCAS(t, hosts, id) }) {
 		return
 	}
+	if !t.Run("fenced snapshot migration and restore", func(t *testing.T) { testLiveSnapshotMigrationRestore(t, hosts, redis, id) }) {
+		return
+	}
 	unauthorized := *hosts[0].client
 	unauthorized.Token = "wrong"
 	if _, err := unauthorized.Invoke(context.Background(), id, "GetTwin", nil); err == nil {

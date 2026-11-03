@@ -65,12 +65,28 @@ Failure output includes container logs. Do not run against a production Docker h
 This is a single-machine, real-runtime integration check, not qualification for
 production writes. It does **not** establish universal stale-writer fencing during asymmetric
 network partitions, actual command-send crash recovery, multi-node failures,
-Scheduler/Placement quorum loss, backups/restores, device behavior, or capacity.
+Scheduler/Placement quorum loss, site-wide backup/restore, device behavior, or capacity.
 Those remain rollout gates; the bounded scenarios below narrow only the local
 connection-loss coverage. Existing simulated tests still cover application
 uncertainty rules; they complement this test rather than establish distributed
 fencing. The test uses the production actor backend/host/client, outbox publisher
 and fleet callback, but does not boot the full Controller/MQTT process.
+
+## Fenced snapshot migration and restore
+
+`fenced snapshot migration and restore` uses unregistered fixture identities with
+explicitly controlled writers; no reminders or fleet workers can mutate these
+snapshots. Actor APIs generate the seed and exercise receipt recovery, while
+both live sidecars handle storage. The test suppresses reminder registration only
+for these direct storage probes; the ordinary suite still tests real reminders.
+
+Coverage includes complete legacy-to-fenced snapshot copying, competing migration
+initializers, authoritative-key precedence, quiesced Redis value/version restore,
+duplicate desired/command/notification receipts, and corrupt-value rejection.
+Negative cases demonstrate version reuse after an online restore and stale legacy
+fallback after deleting the fenced key. See the
+[restore limits and operational requirements](device-state-fencing.md#live-migration-and-restore-coverage).
+No production runtime or defaults change.
 
 ## Token mapping
 
@@ -85,6 +101,10 @@ References: [Dapr Docker hosting](https://docs.dapr.io/operations/hosting/self-h
 [app token authentication](https://docs.dapr.io/operations/security/app-api-token/).
 
 ## Recorded validation
+
+On 2026-11-03, the full race-enabled live suite passed with the migration and
+restore probes, all eight packet-loss/control cases, and the existing recovery
+checks (189 seconds). `go test -race ./...` and `go vet ./...` also passed.
 
 Before the packet-loss extension, on 2026-11-02 the race-enabled live suite passed
 with Dapr 1.19.1, Redis 7.4.2 and
