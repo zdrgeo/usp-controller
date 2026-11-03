@@ -23,11 +23,13 @@ Add `replica` inside an enabled phase-4 `actor_canary` configuration:
   "instance_id": "controller-pod-a",
   "shared_group": "site-001-controller",
   "app_id": "usp-controller-site-001",
-  "state_store": "device-actor-state"
+  "state_store": "device-actor-state",
+  "snapshot_etcd_url": "https://snapshot-etcd.example:2379",
+  "snapshot_etcd_prefix": "/usp/site-001/snapshots/"
 }
 ```
 
-These values are nonempty simple names (letters, digits, dot, underscore, hyphen).
+The instance/group/app/store values are nonempty simple names (letters, digits, dot, underscore, hyphen).
 Set a distinct `instance_id` in each replica's generated configuration. The MQTT
 client ID becomes `<client_id>/<instance_id>`; never reuse a live identity or allow
 broker client-ID eviction to act as failover. Keep the group stable and unique to
@@ -39,7 +41,7 @@ Each connection sends the same logical Connect announcements on reconnect; devic
 must tolerate duplicates. Shared subscriptions do not promise per-device ordering.
 
 Before enabling this profile, explicitly initialize or migrate each fenced snapshot
-using the [snapshot administrative workflow](device-state-fencing.md). Runtime
+using the [independent etcd migration workflow](device-etcd-snapshots.md). Runtime
 loads fail closed when state is missing; they never import legacy snapshots.
 
 Replica mode requires **every** provisioned Agent in the explicit actor allowlist.
@@ -54,14 +56,14 @@ Omitting `replica` preserves single-host canary behavior. Omitting/ disabling
 ## Shared state and readiness
 
 Configure a shared transactional actor store with `actorStateStore: true` in Dapr,
-accessible from every replica, and a durable event pubsub component. Reuse the
+accessible from every replica, an independent snapshot etcd cluster, and a durable event pubsub component. Reuse the
 same backend/keyspace/app ID as the existing cohort; pointing to empty state can
 forget prior attempts. Metadata checks cannot prove that equal component names
 refer to the same backend or that it has been configured as the actor store.
 Verify component resources, endpoints, credentials and replication directly.
 Do not use per-pod SQLite, local files or independent Redis instances. Application
-code uses only Dapr actor transactions; there is no SQL claiming or direct worker
-state write. All callbacks must come through the authenticated local sidecar.
+code stores authoritative snapshots through atomic etcd transactions in a separate
+recovery domain; Dapr handles actor infrastructure and pubsub. There is no SQL claiming. All callbacks must come through the authenticated local sidecar.
 
 Enable Dapr app-health checks explicitly on the private callback `/healthz` and
 configure the app API token. Pin and qualify Dapr 1.19.x plus the chosen component,

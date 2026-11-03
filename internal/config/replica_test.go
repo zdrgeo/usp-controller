@@ -8,7 +8,7 @@ import (
 
 func TestReplicaProfileValidation(t *testing.T) {
 	base := Config{EndpointID: "controller", ClientID: "site", Broker: "tls://broker:8883", Agents: map[string]Agent{"device": {Topic: "d", Inbox: "c/d"}}, Listen: "127.0.0.1:8080", JournalPath: "events", JournalMaxBytes: 100, RequestTimeoutSeconds: 30, MaxPending: 10, QoS: 1}
-	base.ActorCanary = &ActorCanary{Enabled: true, Tenant: "tenant", Devices: []string{"device"}, DaprURL: "http://127.0.0.1:3500", CallbackListen: "127.0.0.1:8081", LockPath: "data/replica.lock", EventPubsub: "events", EventTopic: "notifications", Replica: &Replica{InstanceID: "pod-a", SharedGroup: "site", AppID: "controller", StateStore: "actors"}}
+	base.ActorCanary = &ActorCanary{Enabled: true, Tenant: "tenant", Devices: []string{"device"}, DaprURL: "http://127.0.0.1:3500", CallbackListen: "127.0.0.1:8081", LockPath: "data/replica.lock", EventPubsub: "events", EventTopic: "notifications", Replica: &Replica{InstanceID: "pod-a", SharedGroup: "site", AppID: "controller", StateStore: "actors", SnapshotEtcdURL: "http://127.0.0.1:2379", SnapshotEtcdPrefix: "/test/snapshots/"}}
 	if err := base.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -22,6 +22,8 @@ func TestReplicaProfileValidation(t *testing.T) {
 		func(c *Config) { c.ActorCanary.Replica.SharedGroup = "bad/group" },
 		func(c *Config) { c.ActorCanary.Replica.AppID = "" },
 		func(c *Config) { c.ActorCanary.Replica.StateStore = "" },
+		func(c *Config) { c.ActorCanary.Replica.SnapshotEtcdURL = "" },
+		func(c *Config) { c.ActorCanary.Replica.SnapshotEtcdPrefix = "" },
 	} {
 		c := base
 		a := *base.ActorCanary

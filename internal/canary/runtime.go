@@ -59,6 +59,7 @@ type Runtime struct {
 	eventPubsub   string
 	verifiedUntil atomic.Int64
 	draining      atomic.Bool
+	etcdClient    *http.Client
 }
 
 func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, apiToken string) (*Runtime, error) {
@@ -88,6 +89,12 @@ func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, 
 	for id, agent := range cfg.Agents {
 		rt.routes[id] = agent.Topic
 	}
+	if a.Replica != nil {
+		rt.etcdClient, err = deviceactor.EtcdHTTPClient(os.Getenv("ETCD_CA_FILE"), os.Getenv("ETCD_CERT_FILE"), os.Getenv("ETCD_KEY_FILE"))
+		if err != nil {
+			return fail(err)
+		}
+	}
 	var actors []*deviceactor.Actor
 	for _, id := range a.Devices {
 		identity := device.DeviceIdentity{Tenant: a.Tenant, ControllerID: cfg.EndpointID, AgentID: id}
@@ -100,7 +107,7 @@ func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, 
 		}
 		var stateBackend deviceactor.Backend = backend
 		if a.Replica != nil {
-			stateBackend, err = deviceactor.NewFencedDaprBackend(a.DaprURL, nil, apiToken, identity, 10*time.Second, opts.MaxBytes, a.Replica.StateStore)
+			stateBackend, err = deviceactor.NewEtcdSnapshotBackend(a.DaprURL, apiToken, a.Replica.SnapshotEtcdURL, a.Replica.SnapshotEtcdPrefix, os.Getenv("ETCD_AUTH_TOKEN"), rt.etcdClient, identity, 10*time.Second, opts.MaxBytes)
 			if err != nil {
 				return fail(err)
 			}
@@ -122,6 +129,9 @@ func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, 
 }
 func (r *Runtime) Close() error {
 	r.BeginDrain()
+	if r.etcdClient != nil {
+		r.etcdClient.CloseIdleConnections()
+	}
 	if r.lock == nil {
 		return nil
 	}

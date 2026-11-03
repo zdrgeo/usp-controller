@@ -14,12 +14,13 @@ import (
 	"example.com/usp-controller/internal/device"
 )
 
-// FencedDaprBackend stores one snapshot with first-write ETag concurrency through
-// the standard state API. Dapr's actor HTTP read API does not expose ETags. The
-// actor still supplies turn routing and reminders; storage enforces write ordering.
+// FencedDaprBackend coordinates versioned snapshots and Dapr reminders. Replica
+// runtime uses the independent etcd adapter; standard Dapr state access remains
+// available for exporting older Redis snapshots and compatibility tests.
 // One instance belongs to one Actor and is used under its local mutex.
 type FencedDaprBackend struct {
 	*DaprBackend
+	etcd          *etcdSnapshots
 	stateURL, key string
 	identity      device.DeviceIdentity
 	etag          string
@@ -63,6 +64,9 @@ func (b *FencedDaprBackend) request(ctx context.Context, method, path string, bo
 }
 
 func (b *FencedDaprBackend) read(ctx context.Context) ([]byte, string, int, error) {
+	if b.etcd != nil {
+		return b.etcd.read(ctx)
+	}
 	return b.request(ctx, http.MethodGet, "/"+url.PathEscape(b.key)+"?consistency=strong", nil)
 }
 
@@ -95,6 +99,9 @@ func (b *FencedDaprBackend) Save(ctx context.Context, data []byte) error {
 		return ErrInvalid
 	}
 	etag := b.etag
+	if b.etcd != nil {
+		return b.commit(ctx, data, etag)
+	}
 	// Redis accepts an ETag write when a key is absent. Reject already-visible
 	// deletion before sending. This is not atomic with Save: concurrent raw key
 	// deletion remains unsupported and must never be part of a restore workflow.
@@ -113,6 +120,15 @@ func (b *FencedDaprBackend) Save(ctx context.Context, data []byte) error {
 func (b *FencedDaprBackend) commit(ctx context.Context, data []byte, etag string) error {
 	b.loaded = false
 	b.etag = ""
+	if b.etcd != nil {
+		next, err := b.etcd.save(ctx, data, etag)
+		if err != nil {
+			return err
+		}
+		b.etag = next
+		b.loaded = true
+		return nil
+	}
 	request := map[string]any{"key": b.key, "value": json.RawMessage(data), "options": map[string]string{"concurrency": "first-write", "consistency": "strong"}}
 	if etag != "" {
 		request["etag"] = etag

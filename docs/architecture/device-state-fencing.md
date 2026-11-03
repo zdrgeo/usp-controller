@@ -1,5 +1,11 @@
 # Replica snapshot concurrency and managed restore
 
+**Superseded for replica snapshots:** replicas now require an independent etcd
+store. The Redis backend and workflow below describe the earlier implementation;
+the CLI permits only read-only Redis export. Use the
+[current etcd configuration, migration and restore guide](device-etcd-snapshots.md).
+The raw Redis limitations below explain why the authority moved.
+
 Replica mode uses `FencedDaprBackend` for every Device snapshot. Legacy remains
 the default. The single-host canary retains its existing actor-state backend and
 single-owner deployment restriction. These changes do not migrate a deployed site.

@@ -1,5 +1,10 @@
 # Live Dapr integration tests
 
+The fixture now also runs etcd 3.5.17 and an etcd-backed actor cohort to test
+[independent snapshot authority](device-etcd-snapshots.md). Raw Redis rollback and
+deletion tests verify that actor receipts remain in etcd. Existing Redis packet-loss
+cases remain compatibility regressions; the etcd path has a separate TCP outage test.
+
 **Snapshot concurrency repair:** replica snapshots now use conditional state
 writes, and typed conflict responses survive Dapr's callback wrapping. The
 historical packet-loss failure below remains recorded. See the
@@ -21,12 +26,12 @@ USP_TEST_DAPR=1 go test -race -count=1 -v -timeout=10m ./internal/integration
 The normal `go test ./...` run skips this test. Explicit opt-in fails if Docker or
 its dependencies are unavailable; it does not silently substitute mocks. The first
 run downloads the versioned `daprio/daprd`, `daprio/placement`, `daprio/scheduler`
-and `redis:7.4.2-alpine` images, plus the packet-test helper described below. The Docker daemon must be local: the test uses bind
+`redis:7.4.2-alpine` and `gcr.io/etcd-development/etcd:v3.5.17` images, plus the packet-test helper described below. The Docker daemon must be local: the test uses bind
 mounts and callbacks to the host. Linux requires `host-gateway` support and a
 firewall that permits container-to-host callbacks. macOS Docker Desktop was tested;
 Linux routing is supported by the fixture but has not been qualified here.
 
-Each run creates a uniquely named private Docker network, five disposable
+Each run creates a uniquely named private Docker network, six disposable
 containers, temporary component files, per-host TCP fault proxies and two
 independent fleet directories.
 Sidecar HTTP ports are dynamically assigned and published only on loopback.

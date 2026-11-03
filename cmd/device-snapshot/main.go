@@ -17,8 +17,10 @@ import (
 
 func run(args []string, input io.Reader, output io.Writer) error {
 	flags := flag.NewFlagSet("device-snapshot", flag.ContinueOnError)
-	action := flags.String("action", "", "inspect, initialize, migrate-legacy, or restore")
+	action := flags.String("action", "", "inspect, initialize, migrate-legacy, import, or restore")
 	endpoint := flags.String("dapr-url", "http://127.0.0.1:3500", "local Dapr endpoint")
+	etcdURL := flags.String("etcd-url", "", "independent etcd JSON gateway")
+	etcdPrefix := flags.String("etcd-prefix", "", "site snapshot namespace ending in slash")
 	store := flags.String("state-store", "", "configured replica state store")
 	tenant := flags.String("tenant", "", "device tenant")
 	controller := flags.String("controller", "", "controller endpoint ID")
@@ -27,16 +29,33 @@ func run(args []string, input io.Reader, output io.Writer) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if flags.NArg() != 0 || *tenant == "" || *controller == "" || *agent == "" || *store == "" {
-		return fmt.Errorf("tenant, controller, device and state-store are required; positional arguments are not accepted")
+	if flags.NArg() != 0 || *tenant == "" || *controller == "" || *agent == "" || ((*store == "") == (*etcdURL == "")) {
+		return fmt.Errorf("tenant, controller, device and exactly one of state-store or etcd-url are required")
 	}
-	if *action != "inspect" && *action != "initialize" && *action != "migrate-legacy" && *action != "restore" {
+	if *action != "inspect" && *action != "initialize" && *action != "migrate-legacy" && *action != "restore" && *action != "import" {
 		return fmt.Errorf("unknown action")
 	}
 	if (*action == "restore") != (*etag != "") {
 		return fmt.Errorf("expected-etag is required only for restore")
 	}
-	b, err := deviceactor.NewFencedDaprBackend(*endpoint, nil, os.Getenv("DAPR_API_TOKEN"), device.DeviceIdentity{Tenant: *tenant, ControllerID: *controller, AgentID: *agent}, time.Second, 1<<20, *store)
+	var b *deviceactor.FencedDaprBackend
+	var err error
+	id := device.DeviceIdentity{Tenant: *tenant, ControllerID: *controller, AgentID: *agent}
+	if *etcdURL != "" {
+		client, e := deviceactor.EtcdHTTPClient(os.Getenv("ETCD_CA_FILE"), os.Getenv("ETCD_CERT_FILE"), os.Getenv("ETCD_KEY_FILE"))
+		if e != nil {
+			return e
+		}
+		b, err = deviceactor.NewEtcdSnapshotBackend(*endpoint, os.Getenv("DAPR_API_TOKEN"), *etcdURL, *etcdPrefix, os.Getenv("ETCD_AUTH_TOKEN"), client, id, time.Second, 1<<20)
+	} else {
+		if *etcdPrefix != "" {
+			return fmt.Errorf("etcd-prefix requires etcd-url")
+		}
+		if *action != "inspect" {
+			return fmt.Errorf("Redis/Dapr snapshots are read-only migration sources; select etcd-url for mutations")
+		}
+		b, err = deviceactor.NewFencedDaprBackend(*endpoint, nil, os.Getenv("DAPR_API_TOKEN"), id, time.Second, 1<<20, *store)
+	}
 	if err != nil {
 		return err
 	}
@@ -47,7 +66,7 @@ func run(args []string, input io.Reader, output io.Writer) error {
 		if err = b.InitializeSnapshot(ctx, *action == "migrate-legacy"); err != nil {
 			return err
 		}
-	case "restore":
+	case "restore", "import":
 		// inspect writes {backup,current_etag}; restore consumes only backup. The
 		// explicit flag must come from a fresh inspection of the live target.
 		var document struct {
@@ -64,7 +83,12 @@ func run(args []string, input io.Reader, output io.Writer) error {
 		if err = json.Unmarshal(raw, &document); err != nil {
 			return err
 		}
-		if err = b.RestoreSnapshot(ctx, document.Backup, *etag); err != nil {
+		if *action == "import" {
+			err = b.ImportSnapshot(ctx, document.Backup)
+		} else {
+			err = b.RestoreSnapshot(ctx, document.Backup, *etag)
+		}
+		if err != nil {
 			return err
 		}
 	}

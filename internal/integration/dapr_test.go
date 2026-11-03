@@ -61,6 +61,7 @@ type liveHost struct {
 	name                      string
 	placement                 *tcpPartition
 	state                     *tcpPartition
+	snapshots                 *tcpPartition
 	saves                     map[string]*heldSave
 	mutations                 map[string]*atomic.Int64
 	client                    *deviceactor.Client
@@ -86,6 +87,9 @@ func TestLiveDapr(t *testing.T) {
 		if name == "redis" {
 			cmd = append(cmd, "-p", "127.0.0.1::6379")
 		}
+		if name == "snapshots" {
+			cmd = append(cmd, "-p", "127.0.0.1::2379")
+		}
 		if name == "placement" {
 			cmd = append(cmd, "-p", "127.0.0.1::50005")
 		}
@@ -102,6 +106,7 @@ func TestLiveDapr(t *testing.T) {
 		return full
 	}
 	redis := start("redis", "redis:7.4.2-alpine", "redis-server", "--appendonly", "yes", "--appendfsync", "always")
+	etcd := start("snapshots", "gcr.io/etcd-development/etcd:v3.5.17", "/usr/local/bin/etcd", "--listen-client-urls", "http://0.0.0.0:2379", "--advertise-client-urls", "http://snapshots:2379", "--data-dir", "/tmp/etcd")
 	placement := start("placement", "daprio/placement:"+daprVersion, "./placement", "--port", "50005")
 	start("scheduler", "daprio/scheduler:"+daprVersion, "./scheduler", "--port", "50006", "--etcd-data-dir", "/tmp/scheduler")
 	resources := t.TempDir()
@@ -127,12 +132,17 @@ func TestLiveDapr(t *testing.T) {
 			inventory[identity.AgentID] = identity
 		}
 	}
+	etcdID := id
+	etcdID.AgentID = "etcd-device"
+	identities = append(identities, etcdID)
+	inventory[etcdID.AgentID] = etcdID
 	transport := &offlineTransport{}
 	newHost := func(index int) *liveHost {
 		t.Helper()
 		h := &liveHost{saves: map[string]*heldSave{}, mutations: map[string]*atomic.Int64{}}
 		h.placement = newTCPPartition(t, docker(t, "port", placement, "50005/tcp"))
 		h.state = newTCPPartition(t, docker(t, "port", redis, "6379/tcp"))
+		h.snapshots = newTCPPartition(t, docker(t, "port", etcd, "2379/tcp"))
 		hostResources := t.TempDir()
 		for _, component := range []string{"state", "events"} {
 			b, err := os.ReadFile(filepath.Join(resources, component+".yaml"))
@@ -171,6 +181,9 @@ func TestLiveDapr(t *testing.T) {
 		for _, identity := range identities {
 			h.mutations[deviceactor.ActorID(identity)] = new(atomic.Int64)
 			backend, err := deviceactor.NewFencedDaprBackend(endpoint, nil, token, identity, time.Second, opts.MaxBytes, "state")
+			if identity.AgentID == etcdID.AgentID {
+				backend, err = newLiveEtcdBackend(h, identity)
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -247,6 +260,9 @@ func TestLiveDapr(t *testing.T) {
 	// never infer new devices or import legacy snapshots from missing keys.
 	for _, identity := range identities {
 		b, err := deviceactor.NewFencedDaprBackend(hosts[0].client.Endpoint, nil, token, identity, time.Second, 1<<20, "state")
+		if identity.AgentID == etcdID.AgentID {
+			b, err = newLiveEtcdBackend(hosts[0], identity)
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -258,6 +274,9 @@ func TestLiveDapr(t *testing.T) {
 		return
 	}
 	if !t.Run("fenced snapshot migration and restore", func(t *testing.T) { testLiveSnapshotMigrationRestore(t, hosts, redis, id) }) {
+		return
+	}
+	if !t.Run("independent etcd authority", func(t *testing.T) { testEtcdIsolation(t, hosts, redis, etcd, etcdID) }) {
 		return
 	}
 	unauthorized := *hosts[0].client

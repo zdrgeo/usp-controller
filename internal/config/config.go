@@ -10,15 +10,18 @@ import (
 	"strings"
 
 	"example.com/usp-controller/internal/device"
+	"example.com/usp-controller/internal/deviceactor"
 )
 
 // Replica selects the experimental shared-subscription topology. All replicas
 // must use identical inventory, actor app identity, state component and group.
 type Replica struct {
-	InstanceID  string `json:"instance_id"`
-	SharedGroup string `json:"shared_group"`
-	AppID       string `json:"app_id"`
-	StateStore  string `json:"state_store"`
+	InstanceID         string `json:"instance_id"`
+	SharedGroup        string `json:"shared_group"`
+	AppID              string `json:"app_id"`
+	StateStore         string `json:"state_store"`
+	SnapshotEtcdURL    string `json:"snapshot_etcd_url"`
+	SnapshotEtcdPrefix string `json:"snapshot_etcd_prefix"`
 }
 
 // FleetProjection is a local, rebuildable status view; it is never command state.
@@ -171,6 +174,9 @@ func (c Config) Validate() error {
 	}
 	if a := c.ActorCanary; a != nil && a.Replica != nil {
 		r := a.Replica
+		if err := deviceactor.ValidateEtcdLocation(r.SnapshotEtcdURL, r.SnapshotEtcdPrefix); err != nil {
+			return fmt.Errorf("replica requires independent snapshot etcd: %w", err)
+		}
 		if !a.Enabled || len(a.Devices) != len(c.Agents) {
 			return fmt.Errorf("replica mode requires actor ownership of every provisioned device")
 		}

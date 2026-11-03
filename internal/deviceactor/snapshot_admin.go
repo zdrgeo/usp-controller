@@ -121,3 +121,19 @@ func (snapshotInput) Save(context.Context, []byte) error {
 func (snapshotInput) EnsureReminder(context.Context) error {
 	return fmt.Errorf("read-only snapshot validation")
 }
+
+// ImportSnapshot explicitly creates a missing target from a verified backup.
+// It never overwrites existing state and never executes queued work. All source
+// writers must be retired before copying a Redis cohort into independent etcd.
+func (b *FencedDaprBackend) ImportSnapshot(ctx context.Context, backup SnapshotBackup) error {
+	b.loaded = false
+	b.etag = ""
+	if b.etcd == nil || backup.Format != 1 || len(backup.Snapshot) == 0 {
+		return ErrInvalid
+	}
+	data, err := b.validateSnapshot(ctx, backup.Snapshot)
+	if err != nil {
+		return err
+	}
+	return b.commit(ctx, data, "")
+}
