@@ -21,6 +21,7 @@ import (
 type FencedDaprBackend struct {
 	*DaprBackend
 	stateURL, key string
+	identity      device.DeviceIdentity
 	etag          string
 	loaded        bool
 }
@@ -33,7 +34,7 @@ func NewFencedDaprBackend(endpoint string, client *http.Client, token string, id
 	if err != nil {
 		return nil, err
 	}
-	return &FencedDaprBackend{DaprBackend: b, stateURL: strings.TrimRight(endpoint, "/") + "/v1.0/state/" + url.PathEscape(store), key: "device-snapshot-cas-v1-" + ActorID(id)}, nil
+	return &FencedDaprBackend{DaprBackend: b, stateURL: strings.TrimRight(endpoint, "/") + "/v1.0/state/" + url.PathEscape(store), key: "device-snapshot-cas-v1-" + ActorID(id), identity: id}, nil
 }
 func (b *FencedDaprBackend) request(ctx context.Context, method, path string, body []byte) ([]byte, string, int, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -60,9 +61,11 @@ func (b *FencedDaprBackend) request(ctx context.Context, method, path string, bo
 	}
 	return data, resp.Header.Get("ETag"), resp.StatusCode, nil
 }
+
 func (b *FencedDaprBackend) read(ctx context.Context) ([]byte, string, int, error) {
 	return b.request(ctx, http.MethodGet, "/"+url.PathEscape(b.key)+"?consistency=strong", nil)
 }
+
 func (b *FencedDaprBackend) Load(ctx context.Context) ([]byte, error) {
 	b.loaded = false
 	b.etag = ""
@@ -72,12 +75,7 @@ func (b *FencedDaprBackend) Load(ctx context.Context) ([]byte, error) {
 	}
 	switch status {
 	case http.StatusNoContent:
-		// Quiesced migration: old hosts must be retired before enabling this backend.
-		// First-write concurrency elects one initializer; old state is never modified.
-		data, err = b.DaprBackend.Load(ctx)
-		if err != nil {
-			return nil, err
-		}
+		return nil, fmt.Errorf("%w: fenced snapshot missing; explicit initialization or recovery required", ErrNotFound)
 	case http.StatusOK:
 		if etag == "" || !json.Valid(data) || bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
 			return nil, fmt.Errorf("fenced snapshot requires valid state and ETag")
@@ -90,13 +88,29 @@ func (b *FencedDaprBackend) Load(ctx context.Context) ([]byte, error) {
 	return data, nil
 }
 func (b *FencedDaprBackend) Save(ctx context.Context, data []byte) error {
-	if !b.loaded {
+	if !b.loaded || b.etag == "" {
 		return fmt.Errorf("fenced save requires a successful load")
 	}
 	if !json.Valid(data) || len(data) > b.maxBytes {
 		return ErrInvalid
 	}
 	etag := b.etag
+	// Redis accepts an ETag write when a key is absent. Reject already-visible
+	// deletion before sending. This is not atomic with Save: concurrent raw key
+	// deletion remains unsupported and must never be part of a restore workflow.
+	if _, current, status, err := b.read(ctx); err != nil || status != http.StatusOK || current != etag {
+		b.loaded = false
+		b.etag = ""
+		if err != nil {
+			return err
+		}
+		return ErrConflict
+	}
+	return b.commit(ctx, data, etag)
+}
+
+// commit is also used by explicit initialization. Only initialization omits ETag.
+func (b *FencedDaprBackend) commit(ctx context.Context, data []byte, etag string) error {
 	b.loaded = false
 	b.etag = ""
 	request := map[string]any{"key": b.key, "value": json.RawMessage(data), "options": map[string]string{"concurrency": "first-write", "consistency": "strong"}}

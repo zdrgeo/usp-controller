@@ -1,121 +1,150 @@
-# Replica snapshot concurrency repair
+# Replica snapshot concurrency and managed restore
 
-Replica mode now uses `FencedDaprBackend` for every Device snapshot. Legacy is
-still the default, and the single-host canary profile retains its existing actor
-state backend and single-owner deployment restriction. No deployed data is changed
-by this source update alone.
+Replica mode uses `FencedDaprBackend` for every Device snapshot. Legacy remains
+the default. The single-host canary retains its existing actor-state backend and
+single-owner deployment restriction. These changes do not migrate a deployed site.
 
-## Cause and repair
+## Conditional snapshots
 
-The original backend read a snapshot and submitted an unconditional actor-state
-transaction. During silent Placement loss, two hosts could load the same desired
-revision and both persist different successful receipts at the next revision.
-Local actor mutexes and Placement routing did not provide a storage fence.
+The original backend used unconditional actor-state transactions. Silent Placement
+loss allowed two hosts to acknowledge different mutations at the same revision.
+Replica snapshots now use the standard Dapr state API with strong consistency and
+`first-write` ETag concurrency. The pinned actor-state HTTP API exposes no ETag.
 
-The pinned Dapr 1.19.1 actor HTTP read endpoint does not expose the state ETag.
-Replica mode therefore uses the standard Dapr state API for its single snapshot,
-with strong consistency and `first-write` concurrency. Existing values must supply
-an ETag; a missing ETag fails closed. A new key uses first-write creation semantics.
-A losing writer returns a conflict or persistence error and must reload before
-another save. In the pinned Redis component, a rejected first creation without
-an ETag can be surfaced as HTTP 500; it is still rejected and never acknowledged. There is
-no automatic replay of a mutation or transport publication.
+Every runtime load requires an existing snapshot and ETag. **A missing key is an
+error, never an instruction to create a device or import legacy state.** Runtime
+saves require a successful load and recheck the live version before writing.
+Conflicts and ambiguous failures invalidate the local version; no mutation or
+transport publication is automatically replayed. A failed attempting-state save
+prevents sending; a failed finish save preserves the uncertainty boundary.
 
-State writes do not return the new ETag. After a successful write, the adapter
-reads back the value and allows further saves in the same turn only if it still
-matches the submitted snapshot. Comparing normalized JSON preserves exact numeric
-values (including integers above 2^53). A competing value, missing version, failed
-read or ambiguous write invalidates the local version. This prevents an old local
-snapshot from acquiring a newer writer's version and overwriting its changes.
+After a write, the backend reads back the value and ETag. It permits another save
+only if the complete value still matches, with JSON comparison preserving integers
+above 2^53. A failed read or competing value invalidates the local version.
 
-The backend writes one key at a time, so Redis multi-key transaction rollback is
-not involved. Initial-create and stale-version behavior is tested against the
-pinned Redis component; other stores require equivalent first-write and ETag
-semantics to be qualified. Do not configure TTLs, external writers, or manual key
-deletion for these snapshots.
+Known domain errors use a typed HTTP-200 actor transport envelope, because Dapr
+wraps non-2xx callbacks as generic HTTP 500. The client maps these back to domain
+errors, and the public API retains its normal HTTP error statuses.
 
-A second defect affected conflict reporting: Dapr wraps non-2xx actor callbacks as
-HTTP 500. Known domain errors now travel as HTTP-200 transport responses containing
-`{"device_actor_error":409}` (or the corresponding supported status). The actor
-client decodes this into the existing domain error, and the public management API
-still returns its normal error status. Infrastructure failures remain failures.
-Custom clients invoking the actor API directly must understand this envelope.
+## Explicit initialization and migration
 
-## Storage and migration
+The key remains `device-snapshot-cas-v1-<encoded-actor-id>` in
+`actor_canary.replica.state_store`, with the configured Dapr app/key prefix. Snapshot
+schema remains 3. Existing fenced snapshots need no data conversion. Every replica
+must use the same app ID, store, prefix and device identity.
 
-The new key is `device-snapshot-cas-v1-<encoded-actor-id>` in the configured
-`actor_canary.replica.state_store`. Dapr's configured app/key prefix applies.
-Keep the same app ID, store, key-prefix policy and identity on every replica.
-The snapshot JSON schema remains 3; the storage key and concurrency protocol change.
+`cmd/device-snapshot` is a standalone administrative command; it does not start a
+Controller, MQTT connection, actor host, reminder or outbox publisher. It uses
+`DAPR_API_TOKEN` from the environment and the same local sidecar/store as the
+replica cohort. It reads and writes sensitive snapshot contents; protect output
+files and do not send them to ordinary logs.
 
-Before upgrading an existing actor cohort:
+Before upgrading, stop admission, drain senders and retire **all** old hosts and
+clients. Mixed binaries are unsupported: old hosts can still perform implicit
+legacy fallback. Back up the configured inventory and snapshots, and resolve
+pending/unknown work under the rollout policy.
 
-1. Stop admission, drain senders, and retire **all** old hosts and clients. Mixed
-   fenced/unfenced hosts are unsupported, even if they share the same app ID.
-2. Preserve a consistent backup of the old actor snapshots and the state component
-   configuration. Resolve pending/unknown work under the existing rollout policy.
-3. Start the upgraded cohort with the same actor identity and state-store settings.
-   If a new fenced key is absent, a load reads the old actor snapshot. The first
-   successful mutation copies its complete updated contents into the fenced key
-   using conditional creation. Receipts, queues, inbox and outbox survive this copy.
-4. Once a fenced key exists, it is authoritative. The old actor key is left intact
-   for diagnosis and is no longer updated by this backend. Validate the upgraded
-   cohort before re-enabling real-device traffic.
+For each device, choose exactly one operation:
 
-There is no dual write and no safe binary rollback to an unfenced host after the
-new key is used: it would resume from stale old state. Roll forward or perform an
-explicit offline migration. Never delete a fenced key to reset a device; doing so
-could import stale legacy state. Backup/restore must preserve the authoritative
-fenced keys and exclude old writers. This patch does not migrate a running site.
+- `inspect`: read an existing authoritative snapshot; never initialize it.
+- `initialize`: create a genuinely new device only when both fenced and legacy
+  state are absent.
+- `migrate-legacy`: explicitly import a validated legacy actor snapshot only when
+  fenced state is absent and legacy state exists. The old copy is left unchanged.
 
-## Scope of the guarantee
+Both initialization paths use conditional creation. Concurrent initializers cannot
+both succeed on the pinned Redis component; a loser may receive a persistence
+error instead of HTTP 409. An existing fenced key always rejects initialization.
+These operations are never called by the runtime. Provision the entire explicit
+allowlist before enabling admission or dispatch; missing snapshots fail actor
+activation/readiness rather than silently becoming empty devices.
 
-Conditional snapshots prevent two writers based on the same stored version from
-both winning. In the command path, a failed attempting-state save prevents sending;
-a failed finish save leaves the persisted uncertainty boundary for recovery.
-Existing tests continue to verify these no-replay rules.
+Example for a known legacy device, with all old writers retired:
 
-This is optimistic storage concurrency, not an ownership lease or a fencing token
-understood by the device or broker. A fresh reader can still become the next writer.
-It does not revoke a command already sent, guarantee availability during a partition,
-or protect against restoring/deleting state or running old unfenced binaries.
-Real-device, restore and deployment-level qualification gates remain in force.
+```sh
+umask 077
+go run ./cmd/device-snapshot -action migrate-legacy \
+  -tenant tenant-a -controller controller-a -device device-a \
+  -state-store device-actor-state > migrated-device-a.json
+```
 
-See the [live integration guide](device-dapr-integration.md) for packet-loss evidence
-and [Dapr state concurrency semantics](https://docs.dapr.io/reference/api/state_api/).
+Use `-action initialize` only for a verified new device. Do not use either action
+to repair deleted authoritative state: the tool cannot distinguish an originally
+absent key from a deleted one. There is no safe binary rollback after migration;
+old binaries would resume from stale legacy state.
 
-## Live migration and restore coverage
+## Managed backup and restore
 
-The opt-in live suite now builds a schema-3 snapshot through the Actor APIs with
-both twin revisions, a queued command, stable receipts, a notification inbox and
-an unexported outbox event. It seeds the pinned Redis legacy actor key offline and
-verifies that Dapr's legacy reader returns the complete snapshot. Two fenced
-backends on separate sidecars load that seed; only one conditional initializer
-succeeds. Duplicate requests retain their receipts without appending queue or
-outbox entries, and later fenced mutations leave the legacy copy unchanged.
+The administrative export contains `{backup: {format: 1, snapshot: ...},
+current_etag: ...}`. `backup` contains application state only. It never contains
+Redis serialization or storage versions. Actor validation checks identity, schema,
+receipts, commands, queue and event consistency before restore.
 
-The restore exercise copies the authoritative Redis key, then uses Redis
-`DUMP`/`RESTORE` to replace its serialized value **including version metadata**.
-After discarding all writers, fresh backends recover the complete backup, retain
-idempotency and can commit subsequent mutations visible through either sidecar.
-An invalid authoritative value fails closed instead of falling back to legacy.
-This is a per-snapshot, quiesced restore test on disposable Redis, not a site backup,
-Scheduler/pubsub restore or a cross-system recovery procedure.
+A restore **updates the existing key with the current live ETag**. Redis advances
+its current version; the historical version is never restored. A writer holding a
+pre-restore version loses its next conditional write, even when the restored
+application data is identical to its old copy. A concurrent mutation invalidates
+the operator's restore precondition. There is no automatic retry on conflict or
+ambiguous failure.
 
-Two negative characterizations make the deployment restriction executable:
+1. Stop admission and drain all senders before restoring. Preserve a current export
+   as well as the older backup. Review commands that may already have executed.
+2. Inspect the current target and supply its ETag explicitly. Never use the ETag
+   saved alongside the older backup. The command does not infer this flag from
+   its input document.
+3. Restore the backup through the administrative command, validate state and
+   reconcile uncertainty before re-enabling traffic.
 
-- Restoring an old Redis version while a writer still holds that version permits
-  that writer to save again (version reuse, or ABA). Ordinary stale writes are
-  rejected before the restore. A restore is therefore **not a fencing event**;
-  every writer must be retired before restoring, and admission must stay stopped
-  until recovery is validated.
-- Removing the authoritative key causes a fresh load to import the stale legacy
-  snapshot. Missing fenced keys cannot distinguish an initial migration from an
-  incomplete restore. Restore inventories must include every authoritative key;
-  do not delete these keys as a recovery shortcut.
+```sh
+umask 077
+go run ./cmd/device-snapshot -action inspect \
+  -tenant tenant-a -controller controller-a -device device-a \
+  -state-store device-actor-state > current-device-a.json
 
-These passing characterization tests document unsupported recovery behavior;
-they do not make online rollback or incomplete restores safe. Restoring an older
-backup can also discard receipts for externally completed work. Resolve that
-uncertainty before resuming device traffic; the suite does not replay commands or
-connect to real devices. Legacy remains the default runtime.
+# Replace LIVE_ETAG with current_etag from the fresh inspection above.
+go run ./cmd/device-snapshot -action restore -expected-etag LIVE_ETAG \
+  -tenant tenant-a -controller controller-a -device device-a \
+  -state-store device-actor-state < older-device-a.json > restored-device-a.json
+```
+
+If a request times out, inspect the target before any retry: the write may already
+have committed. A successful restore can still discard receipts for externally
+completed work. It cannot revoke a command already sent, or prevent a writer that
+freshly reloads from making a subsequent valid mutation. Drain remains necessary.
+
+## Store-level recovery remains restricted
+
+Do **not** use Redis `DUMP`/`RESTORE`, AOF rollback, deletion, TTL, or external writes
+on a running cohort. Restoring Redis's old version produces ABA: a surviving old
+writer can become valid again. The managed restore path avoids that operation;
+it is not an independent restore epoch or a storage ownership lease.
+
+The pinned Redis component also accepts writes to missing keys even when an ETag
+was supplied. The runtime's preflight rejects deletion already visible before a
+save, but cannot make the existence check atomic with that save. Concurrent raw
+key deletion can still race with an in-flight writer. Removing implicit fallback
+prevents fresh readers from importing stale legacy state; it does not make raw
+store manipulation safe. Other components require independent qualification.
+
+Missing or corrupt authoritative state fails closed. This command deliberately
+cannot recover a deleted key or an entire lost database. Such disaster recovery
+requires retiring all writers, a verified authoritative inventory, and a separately
+qualified offline recovery process. Do not substitute initialization or legacy
+migration for recovery. Back up Scheduler/pubsub and external effects consistently
+under the deployment policy; per-device CAS restore does not solve site recovery.
+
+## Live validation
+
+The opt-in Dapr 1.19.1 / Redis 7.4.2 suite verifies explicit legacy migration,
+complete twin/receipt/queue/inbox/outbox preservation, duplicate request recovery,
+conditional restore with advancing storage versions, rejection of surviving stale
+writers, stale restore authorization and wrong device identities. Deleting a key
+before a save causes readers, writers and managed restore to fail without importing
+legacy state or recreating the key. Unit tests also inject a mutation between the
+restore read and write, and an ambiguous committed response.
+
+Earlier tests characterized unsafe raw Redis restore and deletion; those findings
+remain applicable to unsupported store-level operations. Production real-device,
+node-loss and whole-site restore gates remain open. See the
+[live integration guide](device-dapr-integration.md) and
+[Dapr state concurrency semantics](https://docs.dapr.io/reference/api/state_api/).

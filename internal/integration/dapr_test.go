@@ -243,6 +243,17 @@ func TestLiveDapr(t *testing.T) {
 		return h
 	}
 	hosts := []*liveHost{newHost(0), newHost(1)}
+	// Provision the explicit inventory before enabling actor turns. Runtime loads
+	// never infer new devices or import legacy snapshots from missing keys.
+	for _, identity := range identities {
+		b, err := deviceactor.NewFencedDaprBackend(hosts[0].client.Endpoint, nil, token, identity, time.Second, 1<<20, "state")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = b.InitializeSnapshot(context.Background(), false); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if !t.Run("fenced snapshot compare and set", func(t *testing.T) { testLiveSnapshotCAS(t, hosts, id) }) {
 		return
 	}

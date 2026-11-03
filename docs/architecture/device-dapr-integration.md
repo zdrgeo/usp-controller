@@ -80,13 +80,18 @@ snapshots. Actor APIs generate the seed and exercise receipt recovery, while
 both live sidecars handle storage. The test suppresses reminder registration only
 for these direct storage probes; the ordinary suite still tests real reminders.
 
-Coverage includes complete legacy-to-fenced snapshot copying, competing migration
-initializers, authoritative-key precedence, quiesced Redis value/version restore,
-duplicate desired/command/notification receipts, and corrupt-value rejection.
-Negative cases demonstrate version reuse after an online restore and stale legacy
-fallback after deleting the fenced key. See the
-[restore limits and operational requirements](device-state-fencing.md#live-migration-and-restore-coverage).
-No production runtime or defaults change.
+Coverage includes explicit legacy-to-fenced snapshot copying, conditional
+initialization, authoritative-key precedence, and managed application-data restore
+through Dapr CAS. Duplicate desired/command/notification receipts survive restore;
+pre-restore writers, stale restore preconditions and wrong identities are rejected.
+Deleting a key before a save causes readers, writers and restore to fail closed.
+The fixture explicitly initializes its inventory before normal actor turns.
+
+The earlier raw Redis restore tests demonstrated version reuse and stale legacy
+fallback. Runtime fallback is now removed; raw Redis restore/deletion remains
+unsupported. The supported restore operation preserves and advances the live
+storage version. See the [administrative workflow and remaining recovery limits](device-state-fencing.md).
+Legacy remains the default, and the single-host canary backend is unchanged.
 
 ## Token mapping
 
@@ -101,6 +106,10 @@ References: [Dapr Docker hosting](https://docs.dapr.io/operations/hosting/self-h
 [app token authentication](https://docs.dapr.io/operations/security/app-api-token/).
 
 ## Recorded validation
+
+After adding managed restore and removing implicit fallback on 2026-11-03, the
+full race-enabled live suite passed (192 seconds), including all packet-loss modes.
+The repository race suite and `go vet ./...` also passed.
 
 On 2026-11-03, the full race-enabled live suite passed with the migration and
 restore probes, all eight packet-loss/control cases, and the existing recovery

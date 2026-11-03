@@ -21,7 +21,11 @@ func TestFencedSnapshotCASAndMigration(t *testing.T) {
 	failPost := false
 	noTag := false
 	replaceAfterSave := false
-	legacy := []byte(`{"desired":1,"large":9007199254740993}`)
+	seed, seedBackend, _ := fixture(t)
+	if _, err := seed.SetDesired(ctx, desired("seed", 0)); err != nil {
+		t.Fatal(err)
+	}
+	legacy := seedBackend.state
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -90,9 +94,15 @@ func TestFencedSnapshotCASAndMigration(t *testing.T) {
 		return b
 	}
 	a, b := create(), create()
+	if _, e := a.Load(ctx); !errors.Is(e, ErrNotFound) {
+		t.Fatal("missing state did not fail closed", e)
+	}
+	if e := a.InitializeSnapshot(ctx, true); e != nil {
+		t.Fatal(e)
+	}
 	for _, v := range []*FencedDaprBackend{a, b} {
 		data, e := v.Load(ctx)
-		if e != nil || string(data) != string(legacy) {
+		if e != nil || !sameStateJSON(data, legacy) {
 			t.Fatal("migration seed", string(data), e)
 		}
 	}

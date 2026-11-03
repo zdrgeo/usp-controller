@@ -280,9 +280,13 @@ func testLiveSnapshotCAS(t *testing.T, hosts []*liveHost, id device.DeviceIdenti
 		if e != nil {
 			t.Fatal(e)
 		}
-		data, e := b.Load(context.Background())
-		if e != nil || len(data) != 0 {
-			t.Fatalf("expected empty snapshot: %s %v", data, e)
+		if i == 0 {
+			if e := b.InitializeSnapshot(context.Background(), false); e != nil {
+				t.Fatal(e)
+			}
+		}
+		if _, e := b.Load(context.Background()); e != nil {
+			t.Fatal(e)
 		}
 		backends[i] = b
 	}

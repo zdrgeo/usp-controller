@@ -94,11 +94,26 @@ func testLiveSnapshotMigrationRestore(t *testing.T, hosts []*liveHost, redis str
 	}
 	first, second := fresh(0), fresh(1)
 	assertSnapshot(t, load(first.DaprBackend), original)
-	assertSnapshot(t, load(first), original)
-	assertSnapshot(t, load(second), original)
-	save(first, original)
-	if e := second.Save(ctx, original); e == nil {
-		t.Fatal("both migration initializers committed")
+	if _, e := first.Load(ctx); !errors.Is(e, deviceactor.ErrNotFound) {
+		t.Fatalf("implicit legacy fallback: %v", e)
+	}
+	if e := first.InitializeSnapshot(ctx, false); !errors.Is(e, deviceactor.ErrConflict) {
+		t.Fatalf("new-device initialization overwrote legacy: %v", e)
+	}
+	initializers := make(chan error, 2)
+	start := make(chan struct{})
+	for _, b := range []*deviceactor.FencedDaprBackend{first, second} {
+		go func(b *deviceactor.FencedDaprBackend) { <-start; initializers <- b.InitializeSnapshot(ctx, true) }(b)
+	}
+	close(start)
+	wins := 0
+	for range 2 {
+		if e := <-initializers; e == nil {
+			wins++
+		}
+	}
+	if wins != 1 {
+		t.Fatalf("concurrent migration initializers: %d successful, want one", wins)
 	}
 	assertSnapshot(t, load(second), original)
 	assertSnapshot(t, load(first.DaprBackend), original)
@@ -119,16 +134,23 @@ func testLiveSnapshotMigrationRestore(t *testing.T, hosts []*liveHost, redis str
 	if key == "" {
 		t.Fatal("missing authoritative fenced key")
 	}
-	backup := key + "-offline-backup"
-	if got := docker(t, "exec", redis, "redis-cli", "COPY", key, backup); got != "1" {
-		t.Fatalf("backup: %s", got)
+	backup, _, e := first.ExportSnapshot(ctx)
+	if e != nil {
+		t.Fatal(e)
 	}
-	// Restore the serialized Redis value, including its ETag/version field.
+	// Restore only application data through Dapr CAS. Never import a backup's
+	// storage version, even when the backup was taken before this writer loaded.
 	restore := func() {
-		if got := docker(t, "exec", redis, "redis-cli", "EVAL", `return redis.call('RESTORE',KEYS[1],0,redis.call('DUMP',KEYS[2]),'REPLACE')`, "2", key, backup); got != "OK" {
-			t.Fatalf("restore: %s", got)
+		admin := fresh(0)
+		_, current, e := admin.ExportSnapshot(ctx)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if e := admin.RestoreSnapshot(ctx, backup, current); e != nil {
+			t.Fatal(e)
 		}
 	}
+
 	next := desired
 	next.ID = "after-backup"
 	next.ExpectedRevision = receipt.Revision
@@ -160,7 +182,7 @@ func testLiveSnapshotMigrationRestore(t *testing.T, hosts []*liveHost, redis str
 		}
 		assertSnapshot(t, load(fresh(1)), advanced)
 	})
-	t.Run("restore does not fence surviving pre-backup writers", func(t *testing.T) {
+	t.Run("managed restore fences surviving pre-backup writers", func(t *testing.T) {
 		restore()
 		survivor := fresh(0)
 		assertSnapshot(t, load(survivor), original)
@@ -174,22 +196,64 @@ func testLiveSnapshotMigrationRestore(t *testing.T, hosts []*liveHost, redis str
 		load(survivor) // capture the backup version again
 		load(writer)
 		save(writer, advanced)
-		restore()                // unsupported online rollback reintroduces that version (ABA)
-		save(survivor, advanced) // characterization: no external restore epoch exists
+		restore() // live ETag advances instead of reusing the backup version
+		if e := survivor.Save(ctx, advanced); !errors.Is(e, deviceactor.ErrConflict) {
+			t.Fatalf("restore accepted pre-restore writer: %v", e)
+		}
+		assertSnapshot(t, load(fresh(1)), original)
+	})
+	t.Run("restore refuses stale authorization and wrong identity", func(t *testing.T) {
+		admin := fresh(0)
+		_, version, e := admin.ExportSnapshot(ctx)
+		if e != nil {
+			t.Fatal(e)
+		}
+		writer := fresh(1)
+		load(writer)
+		save(writer, advanced)
+		if e := admin.RestoreSnapshot(ctx, backup, version); !errors.Is(e, deviceactor.ErrConflict) {
+			t.Fatalf("stale restore overwrote live mutation: %v", e)
+		}
+		assertSnapshot(t, load(fresh(0)), advanced)
+		var wrong map[string]any
+		if e := json.Unmarshal(backup.Snapshot, &wrong); e != nil {
+			t.Fatal(e)
+		}
+		wrong["Identity"] = device.DeviceIdentity{Tenant: "wrong", ControllerID: id.ControllerID, AgentID: id.AgentID}
+		data, e := json.Marshal(wrong)
+		if e != nil {
+			t.Fatal(e)
+		}
+		_, version, e = admin.ExportSnapshot(ctx)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if e := admin.RestoreSnapshot(ctx, deviceactor.SnapshotBackup{Format: 1, Snapshot: data}, version); e == nil {
+			t.Fatal("cross-device restore accepted")
+		}
 		assertSnapshot(t, load(fresh(1)), advanced)
 	})
-	t.Run("invalid authoritative snapshot never falls back", func(t *testing.T) {
-		docker(t, "exec", redis, "redis-cli", "HSET", key, "data", "null")
-		if _, e := fresh(0).Load(ctx); e == nil {
-			t.Fatal("invalid fenced snapshot silently used legacy state")
+	t.Run("missing fenced key fails closed for readers writers and restore", func(t *testing.T) {
+		survivor := fresh(0)
+		load(survivor)
+		admin := fresh(1)
+		_, version, e := admin.ExportSnapshot(ctx)
+		if e != nil {
+			t.Fatal(e)
 		}
-		restore()
-	})
-	t.Run("missing fenced key reimports stale legacy state", func(t *testing.T) {
 		docker(t, "exec", redis, "redis-cli", "DEL", key)
-		assertSnapshot(t, load(fresh(0)), original)
-		// Recover the authoritative backup before leaving this isolated fixture.
-		restore()
-		assertSnapshot(t, load(fresh(1)), original)
+		if _, e := fresh(0).Load(ctx); !errors.Is(e, deviceactor.ErrNotFound) {
+			t.Fatalf("stale legacy fallback: %v", e)
+		}
+		if e := survivor.Save(ctx, advanced); e == nil {
+			t.Fatal("stale writer recreated missing key")
+		}
+		if e := admin.RestoreSnapshot(ctx, backup, version); !errors.Is(e, deviceactor.ErrNotFound) {
+			t.Fatalf("restore recreated missing key: %v", e)
+		}
+		assertSnapshot(t, load(first.DaprBackend), original)
+		if got := docker(t, "exec", redis, "redis-cli", "EXISTS", key); got != "0" {
+			t.Fatal("missing snapshot was recreated")
+		}
 	})
 }

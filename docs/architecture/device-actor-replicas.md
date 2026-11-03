@@ -38,6 +38,10 @@ announced/ResponseTopic remain ordinary inboxes, never `$share/...` filters.
 Each connection sends the same logical Connect announcements on reconnect; devices
 must tolerate duplicates. Shared subscriptions do not promise per-device ordering.
 
+Before enabling this profile, explicitly initialize or migrate each fenced snapshot
+using the [snapshot administrative workflow](device-state-fencing.md). Runtime
+loads fail closed when state is missing; they never import legacy snapshots.
+
 Replica mode requires **every** provisioned Agent in the explicit actor allowlist.
 It rejects mixed legacy/actor cohorts, because a shared delivery could otherwise
 reach the wrong synchronous waiter. To split a site, use separate provisioned
@@ -107,7 +111,7 @@ the pinned runtime and state-store combination passes the following drills.
 | Isolate old host from Placement, Scheduler and state separately | Verify runtime rejects stale actor turns/writes; record any external send that can still occur |
 | State-store or pubsub outage | No publication after failed begin commit; pending outbox retained, readiness ages out |
 | MQTT subscriber loss | Subsequent messages reach survivor; acknowledge nonpersistent-session loss window |
-| Restore/rollback | Quiesce old senders first; preserve schema 2 and outbox IDs; do not replay restored stale queues |
+| Restore/rollback | Drain senders; use managed snapshot CAS restore; preserve schema 3 and outbox IDs; never raw-restore storage versions or replay stale queues |
 
 Automated coverage includes a real Mosquitto two-subscriber test (single delivery
 and subsequent survivor delivery), simulated serialized placement across two actor
