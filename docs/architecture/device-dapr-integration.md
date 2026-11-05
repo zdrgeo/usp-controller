@@ -3,7 +3,7 @@
 The fixture now also runs a three-member etcd 3.5.17 cluster and an etcd-backed actor cohort to test
 [independent snapshot authority](device-etcd-snapshots.md). Raw Redis rollback and
 deletion tests verify that actor receipts remain in etcd. Existing Redis packet-loss
-cases remain compatibility regressions; the etcd path has TCP outage, kernel packet-loss and majority-loss tests.
+cases remain compatibility regressions; the etcd path has TCP outage, kernel packet-loss, majority-loss, leader peer-partition and elected-leader failover tests.
 
 **Snapshot concurrency repair:** replica snapshots now use conditional state
 writes, and typed conflict responses survive Dapr's callback wrapping. The
@@ -310,3 +310,21 @@ Tests check preloaded CAS ambiguity, Dapr admission failure, stable receipt reco
 and stale-writer rejection. The `etcd quorum loss` subtest proves two-of-three
 availability, one-of-three rejection despite a reachable endpoint, and recovery
 using the original stopped members. See the [scope and assertions](device-etcd-snapshots.md#tests-and-scope).
+
+## Etcd peer partition and elected-leader failover
+
+Validated on 2026-11-05: full live suite passed in 299 seconds; the focused rejoin
+assertions, repository race tests and static checks also passed.
+
+`etcd peer partition` identifies the current elected leader and isolates its peer
+port 2380 using DROP rules in that disposable member's namespace. Its client
+endpoint stays alive. The majority must elect a different leader at a higher term,
+while the isolated member loses leadership and rejects linearizable admission and
+snapshot CAS. Majority writes, stable-ID retries and stale-writer rejection are
+verified before and after healing.
+
+`etcd leader failover` SIGKILLs the discovered leader, checks the replacement term,
+then restarts the original member with its existing storage. Both tests verify
+that baseline and recovery receipts survive rejoin. Fixture proxies are explicitly
+retargeted to the majority and back; no automatic gateway failover is claimed.
+No production runtime or default configuration changes are made.

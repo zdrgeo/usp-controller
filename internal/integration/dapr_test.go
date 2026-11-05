@@ -292,6 +292,12 @@ func TestLiveDapr(t *testing.T) {
 	if !t.Run("etcd quorum loss", func(t *testing.T) { testEtcdQuorumLoss(t, hosts, members, etcdID) }) {
 		return
 	}
+	if !t.Run("etcd peer partition", func(t *testing.T) { testEtcdLeadership(t, hosts, members, etcdID, true) }) {
+		return
+	}
+	if !t.Run("etcd leader failover", func(t *testing.T) { testEtcdLeadership(t, hosts, members, etcdID, false) }) {
+		return
+	}
 	unauthorized := *hosts[0].client
 	unauthorized.Token = "wrong"
 	if _, err := unauthorized.Invoke(context.Background(), id, "GetTwin", nil); err == nil {

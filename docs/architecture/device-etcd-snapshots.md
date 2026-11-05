@@ -113,6 +113,10 @@ reset a device. Direct administrative imports remain explicit operator actions.
 
 ## Tests and scope
 
+The 2026-11-05 peer-partition/leader-failover extension passed the full race-enabled
+live suite (299 seconds), a focused rejoin/stale-writer rerun, the repository race
+suite and `go vet ./...`.
+
 On 2026-11-05, the full race-enabled live suite passed with the three-member
 cluster, all etcd packet-loss cases and quorum recovery (273 seconds).
 `go test -race ./...` and `go vet ./...` also passed.
@@ -150,10 +154,28 @@ members with their existing data restores one stable receipt and rejects the
 pre-outage writer. This exercises majority loss by stopped members; it does not
 claim peer-link partition, leader-specific failover or disaster-restore coverage.
 
+The peer-partition drill discovers the elected leader from member IDs and Raft
+terms, then drops both directions of port 2380 traffic in that member's namespace.
+Both source and destination ports are matched, including existing streams initiated
+by the leader. Client port 2379 remains open. The test verifies a higher-term
+replacement election, the isolated member relinquishing leadership, local
+serializable reads on that member, and rejection of its actor mutations and CAS.
+The majority must accept one stable request while the former leader is isolated.
+After healing, the original member rejoins with baseline and recovery receipts
+intact, and rejects a writer holding its pre-election revision. Packet counters
+prove the peer fault was exercised.
+
+A separate failover drill discovers and SIGKILLs the current elected leader,
+observes a higher-term replacement, verifies majority admission and stale-writer
+rejection, and restarts the original member with its existing data and membership.
+The tests explicitly retarget the fixture's client proxies to a reachable member
+and later to the former leader. The production adapter still accepts one gateway
+URL: this proves cluster failover, not automatic client endpoint selection.
+
 The older packet-loss tests still exercise the Redis compatibility cohort and
 Placement. All tests are single-machine qualification with offline transport.
-Whole-cluster etcd rollback, WAN/quorum partitions and real-device effects remain
-open gates.
+Whole-cluster etcd rollback, arbitrary/asymmetric peer partitions, WAN timing and
+real-device effects remain open gates.
 
 References: [etcd API guarantees](https://etcd.io/docs/v3.5/learning/api_guarantees/),
 [etcd JSON gateway](https://etcd.io/docs/v3.5/dev-guide/api_grpc_gateway/),
