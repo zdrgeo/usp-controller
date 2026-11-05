@@ -1,9 +1,9 @@
 # Live Dapr integration tests
 
-The fixture now also runs etcd 3.5.17 and an etcd-backed actor cohort to test
+The fixture now also runs a three-member etcd 3.5.17 cluster and an etcd-backed actor cohort to test
 [independent snapshot authority](device-etcd-snapshots.md). Raw Redis rollback and
 deletion tests verify that actor receipts remain in etcd. Existing Redis packet-loss
-cases remain compatibility regressions; the etcd path has a separate TCP outage test.
+cases remain compatibility regressions; the etcd path has TCP outage, kernel packet-loss and majority-loss tests.
 
 **Snapshot concurrency repair:** replica snapshots now use conditional state
 writes, and typed conflict responses survive Dapr's callback wrapping. The
@@ -31,7 +31,7 @@ mounts and callbacks to the host. Linux requires `host-gateway` support and a
 firewall that permits container-to-host callbacks. macOS Docker Desktop was tested;
 Linux routing is supported by the fixture but has not been qualified here.
 
-Each run creates a uniquely named private Docker network, six disposable
+Each run creates a uniquely named private Docker network, eight disposable
 containers, temporary component files, per-host TCP fault proxies and two
 independent fleet directories.
 Sidecar HTTP ports are dynamically assigned and published only on loopback.
@@ -293,3 +293,20 @@ The complete repaired live run passed with Dapr 1.19.1 and Redis 7.4.2 in about
 
 The full ordinary race-enabled suite and static checks also passed. The historical
 failure evidence remains above to explain why the storage protocol changed.
+
+## Etcd client-path and quorum faults
+
+Validated on 2026-11-05: the full race-enabled live suite passed in 273 seconds,
+alongside the repository race suite and static checks.
+
+The three etcd members use their own peer ports and persistent container data for
+the duration of the test. The contacted member stays running during quorum loss.
+The `etcd packet loss` subtests inject DROP on that member's **client port only**;
+directions are relative to the server (outbound loses responses, inbound loses
+requests). Netshoot shares only the disposable member's network namespace and
+receives NET_ADMIN; no host firewall or production service is modified.
+
+Tests check preloaded CAS ambiguity, Dapr admission failure, stable receipt recovery,
+and stale-writer rejection. The `etcd quorum loss` subtest proves two-of-three
+availability, one-of-three rejection despite a reachable endpoint, and recovery
+using the original stopped members. See the [scope and assertions](device-etcd-snapshots.md#tests-and-scope).

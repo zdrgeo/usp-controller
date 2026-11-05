@@ -87,7 +87,7 @@ func TestLiveDapr(t *testing.T) {
 		if name == "redis" {
 			cmd = append(cmd, "-p", "127.0.0.1::6379")
 		}
-		if name == "snapshots" {
+		if strings.HasPrefix(name, "snapshots") {
 			cmd = append(cmd, "-p", "127.0.0.1::2379")
 		}
 		if name == "placement" {
@@ -106,7 +106,12 @@ func TestLiveDapr(t *testing.T) {
 		return full
 	}
 	redis := start("redis", "redis:7.4.2-alpine", "redis-server", "--appendonly", "yes", "--appendfsync", "always")
-	etcd := start("snapshots", "gcr.io/etcd-development/etcd:v3.5.17", "/usr/local/bin/etcd", "--listen-client-urls", "http://0.0.0.0:2379", "--advertise-client-urls", "http://snapshots:2379", "--data-dir", "/tmp/etcd")
+	var members []string
+	cluster := "snapshots=http://snapshots:2380,snapshots1=http://snapshots1:2380,snapshots2=http://snapshots2:2380"
+	for _, name := range []string{"snapshots", "snapshots1", "snapshots2"} {
+		members = append(members, start(name, "gcr.io/etcd-development/etcd:v3.5.17", "/usr/local/bin/etcd", "--name", name, "--listen-client-urls", "http://0.0.0.0:2379", "--advertise-client-urls", "http://"+name+":2379", "--listen-peer-urls", "http://0.0.0.0:2380", "--initial-advertise-peer-urls", "http://"+name+":2380", "--initial-cluster", cluster, "--initial-cluster-token", network, "--data-dir", "/tmp/etcd"))
+	}
+	etcd := members[0]
 	placement := start("placement", "daprio/placement:"+daprVersion, "./placement", "--port", "50005")
 	start("scheduler", "daprio/scheduler:"+daprVersion, "./scheduler", "--port", "50006", "--etcd-data-dir", "/tmp/scheduler")
 	resources := t.TempDir()
@@ -277,6 +282,14 @@ func TestLiveDapr(t *testing.T) {
 		return
 	}
 	if !t.Run("independent etcd authority", func(t *testing.T) { testEtcdIsolation(t, hosts, redis, etcd, etcdID) }) {
+		return
+	}
+	for _, mode := range []string{"control", "outbound", "inbound", "half-open"} {
+		if !t.Run("etcd packet loss/"+mode, func(t *testing.T) { testEtcdPacketLoss(t, hosts, etcd, etcdID, mode) }) {
+			return
+		}
+	}
+	if !t.Run("etcd quorum loss", func(t *testing.T) { testEtcdQuorumLoss(t, hosts, members, etcdID) }) {
 		return
 	}
 	unauthorized := *hosts[0].client

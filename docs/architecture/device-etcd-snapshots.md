@@ -113,11 +113,15 @@ reset a device. Direct administrative imports remain explicit operator actions.
 
 ## Tests and scope
 
+On 2026-11-05, the full race-enabled live suite passed with the three-member
+cluster, all etcd packet-loss cases and quorum recovery (273 seconds).
+`go test -race ./...` and `go vet ./...` also passed.
+
 On 2026-11-03, `go test -race ./...`, `go vet ./...`, and the full opt-in live
 suite passed (189 seconds). A focused rerun also passed the strengthened etcd
 deletion/recreation stale-writer case.
 
-The live fixture adds isolated etcd 3.5.17 to the pinned Dapr 1.19.1 / Redis 7.4.2
+The live fixture adds an isolated three-member etcd 3.5.17 cluster to the pinned Dapr 1.19.1 / Redis 7.4.2
 stack. A provisioned actor uses etcd while the older cohort remains as Redis
 compatibility regression coverage. Tests invoke the etcd-backed actor through
 Dapr, perform real Redis `DUMP`/`RESTORE` and `DEL` on obsolete snapshot keys, and
@@ -127,10 +131,29 @@ atomic rejection after etcd deletion/recreation, and create-only Redis-to-etcd
 import. Unit tests cover failed transaction responses, ambiguous writes, TLS
 configuration and redirect/credential isolation.
 
-The existing one-way packet-loss/half-open tests still exercise the Redis
-compatibility cohort and Placement; they are not an etcd packet-loss qualification.
-The new etcd outage test closes TCP streams through per-host proxies. Whole-cluster
-etcd rollback, quorum loss, WAN behavior and real-device effects remain open gates.
+The etcd client-path tests inject kernel `DROP` rules inside the contacted etcd
+member's network namespace. They cover a healthy control, server-to-client loss,
+client-to-server loss and bidirectional half-open connections. Rules match client
+port 2379 only, leaving peer traffic on 2380 intact. Drop counters prove traffic
+hit the rules; the half-open case verifies an original established connection
+survives the initial black-hole interval. Both a preloaded snapshot CAS and a
+Dapr-routed mutation must fail without acknowledgment during the fault. After
+healing, stable-ID retries converge to one receipt through both sidecars, a
+conflicting request loses, and a pre-fault writer cannot overwrite recovered state.
+A timed-out write may have committed; the test does not infer failure from timeout.
+
+The quorum drill stops one member and verifies admission with two members, then
+stops a second member while keeping the contacted endpoint alive. A local
+serializable read confirms that endpoint still serves the snapshot, but actor
+admission and snapshot CAS must fail without a majority. Restarting original
+members with their existing data restores one stable receipt and rejects the
+pre-outage writer. This exercises majority loss by stopped members; it does not
+claim peer-link partition, leader-specific failover or disaster-restore coverage.
+
+The older packet-loss tests still exercise the Redis compatibility cohort and
+Placement. All tests are single-machine qualification with offline transport.
+Whole-cluster etcd rollback, WAN/quorum partitions and real-device effects remain
+open gates.
 
 References: [etcd API guarantees](https://etcd.io/docs/v3.5/learning/api_guarantees/),
 [etcd JSON gateway](https://etcd.io/docs/v3.5/dev-guide/api_grpc_gateway/),

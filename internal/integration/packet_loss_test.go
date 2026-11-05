@@ -20,11 +20,12 @@ type packetFault struct {
 	helper string
 	port   string
 	chains []string
+	server bool
 }
 
 func newPacketFault(t *testing.T, h *liveHost, p *tcpPartition) *packetFault {
 	t.Helper()
-	// NET_ADMIN is restricted to this disposable sidecar's network namespace.
+	// NET_ADMIN is restricted to the selected disposable container's network namespace.
 	// No host namespace, Docker socket, host mount, or privileged container is used.
 	name := h.name + "-packets"
 	docker(t, "run", "-d", "--name", name, "--network", "container:"+h.name, "--cap-add", "NET_ADMIN", netshootImage, "sleep", "600")
@@ -33,7 +34,11 @@ func newPacketFault(t *testing.T, h *liveHost, p *tcpPartition) *packetFault {
 }
 func (f *packetFault) established(t *testing.T) string {
 	t.Helper()
-	return docker(t, "exec", f.helper, "ss", "-tnH", "state", "established", "(", "dport", "=", ":"+f.port, ")")
+	port := "dport"
+	if f.server {
+		port = "sport"
+	}
+	return docker(t, "exec", f.helper, "ss", "-tnH", "state", "established", "(", port, "=", ":"+f.port, ")")
 }
 func (f *packetFault) install(t *testing.T, mode string) {
 	t.Helper()
@@ -47,7 +52,7 @@ func (f *packetFault) install(t *testing.T, mode string) {
 		// Register exact cleanup before adding rules; never flush unrelated rules.
 		t.Cleanup(func() {
 			portFlag := "--dport"
-			if direction == "INPUT" {
+			if (direction == "INPUT") != f.server {
 				portFlag = "--sport"
 			}
 			docker(t, "exec", f.helper, "iptables", "-w", "-D", direction, "-p", "tcp", portFlag, f.port, "-j", chain)
@@ -55,7 +60,7 @@ func (f *packetFault) install(t *testing.T, mode string) {
 			docker(t, "exec", f.helper, "iptables", "-w", "-X", chain)
 		})
 		portFlag := "--dport"
-		if direction == "INPUT" {
+		if (direction == "INPUT") != f.server {
 			portFlag = "--sport"
 		}
 		docker(t, "exec", f.helper, "iptables", "-w", "-I", direction, "1", "-p", "tcp", portFlag, f.port, "-j", chain)
