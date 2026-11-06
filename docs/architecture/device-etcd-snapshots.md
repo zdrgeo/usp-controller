@@ -28,7 +28,7 @@ claiming or process-local ownership lock is introduced.
 
 ## Configuration
 
-All replicas must specify the same endpoint and namespace:
+All replicas must specify endpoints in the same cluster and the same namespace:
 
 ```json
 "replica": {
@@ -36,7 +36,7 @@ All replicas must specify the same endpoint and namespace:
   "shared_group": "site-001-controller",
   "app_id": "usp-controller-site-001",
   "state_store": "device-actor-state",
-  "snapshot_etcd_url": "https://snapshot-etcd.example:2379",
+  "snapshot_etcd_urls": ["https://etcd-a.example:2379", "https://etcd-b.example:2379", "https://etcd-c.example:2379"],
   "snapshot_etcd_prefix": "/usp/site-001/snapshots/"
 }
 ```
@@ -48,7 +48,30 @@ prefixing does not apply. Use a dedicated stable namespace per cohort and verify
 all replica configurations before admission. Activate/readiness exercises the
 snapshot read through the actor, so etcd access is required for dispatch readiness.
 
-The endpoint must expose the etcd v3 JSON gateway. HTTPS is required outside
+Use `snapshot_etcd_urls` for an ordered list of one to five explicit endpoints in
+the **same cluster**. The original `snapshot_etcd_url` field remains supported for
+single-endpoint deployments; setting both fields is rejected. Duplicate endpoints
+are rejected. Endpoint discovery and background health probes are not performed.
+The snapshot CLI accepts repeated `-etcd-url` flags for the same behavior.
+
+Reads automatically try alternate endpoints on transport failures and HTTP
+408/429/500/502/503/504. A complete read has a five-second budget (or the caller's
+shorter deadline). Each endpoint attempt is capped at five seconds divided by
+the endpoint count. The backend remembers
+a successful endpoint for later calls. Authentication/authorization errors,
+redirects, certificate verification errors and malformed responses fail closed.
+Multi-endpoint backends pin the cluster ID from their first successful response
+and reject subsequent responses from a different cluster. This is a per-backend
+check, not a substitute for verifying configuration before startup or restore.
+
+Transactions are submitted once per call. A transport/server failure rotates the
+preferred endpoint for the **next** call but returns the ambiguous error and
+invalidates the loaded version. It does not replay a mutation. A caller must reload
+and retry its stable request ID; the actor receipt resolves whether the first
+attempt committed. A logical CAS conflict does not trigger endpoint failover.
+Failover cannot supply quorum when a majority of members is unavailable.
+
+Every endpoint must expose the etcd v3 JSON gateway. HTTPS is required outside
 loopback. `ETCD_CA_FILE` optionally adds a private CA; `ETCD_CERT_FILE` and
 `ETCD_KEY_FILE` enable mutual TLS. `ETCD_AUTH_TOKEN` optionally supplies the etcd
 Authorization token (provision/refresh it operationally; the adapter does not log
@@ -169,8 +192,12 @@ A separate failover drill discovers and SIGKILLs the current elected leader,
 observes a higher-term replacement, verifies majority admission and stale-writer
 rejection, and restarts the original member with its existing data and membership.
 The tests explicitly retarget the fixture's client proxies to a reachable member
-and later to the former leader. The production adapter still accepts one gateway
-URL: this proves cluster failover, not automatic client endpoint selection.
+and later to the former leader. Those earlier tests use a single gateway URL
+and explicit proxy retargeting.
+Separate automatic-failover cases now configure a fixed endpoint list and verify
+Dapr actor admission after connection loss, peer isolation and leader death without
+retargeting clients during the fault. They also check that a failed write returns
+an error and the next read recovers through an alternate endpoint.
 
 The older packet-loss tests still exercise the Redis compatibility cohort and
 Placement. All tests are single-machine qualification with offline transport.

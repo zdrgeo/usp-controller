@@ -328,3 +328,24 @@ then restarts the original member with its existing storage. Both tests verify
 that baseline and recovery receipts survive rejoin. Fixture proxies are explicitly
 retargeted to the majority and back; no automatic gateway failover is claimed.
 No production runtime or default configuration changes are made.
+
+## Automatic etcd endpoint failover
+
+A separate actor cohort receives a fixed list of three etcd gateway proxies. The
+`etcd automatic endpoint failover` cases force it to use the elected leader, then
+break its connection, isolate its peer links, or kill it. Other endpoints are
+available before the fault starts. Recovery must succeed without retargeting
+proxies or rebuilding the backend during the fault. Stable receipts survive the
+transition; preloaded writes fail ambiguously rather than being replayed, and the
+next read uses an alternate endpoint. Docker's ephemeral host port mappings are
+refreshed only before each scenario, never to make failover succeed.
+
+The older single-endpoint leadership tests remain in place to exercise rejection
+at an isolated endpoint directly. They are distinct from this automatic client
+failover coverage. Legacy remains the default.
+
+Validated on 2026-11-06: `go test -race ./...`, `go vet ./...`, and the complete
+`USP_TEST_DAPR=1 go test -race -count=1 -v -timeout=15m ./internal/integration`
+suite passed. The live suite completed in 314.470 seconds, including all three
+automatic failover cases and the existing packet-loss, quorum, restore and fencing
+checks. This remains single-machine qualification with offline device transport.

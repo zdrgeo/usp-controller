@@ -35,6 +35,14 @@ func TestReplicaProfileValidation(t *testing.T) {
 			t.Fatal("unsafe replica config", c)
 		}
 	}
+	base.ActorCanary.Replica.SnapshotEtcdURLs = []string{"https://a:2379", "https://b:2379"}
+	if err := base.Validate(); err == nil {
+		t.Fatal("ambiguous endpoint configuration")
+	}
+	base.ActorCanary.Replica.SnapshotEtcdURL = ""
+	if err := base.Validate(); err != nil {
+		t.Fatal(err)
+	}
 	base.ActorCanary.Replica = nil
 	if err := base.Validate(); err != nil {
 		t.Fatal(err)

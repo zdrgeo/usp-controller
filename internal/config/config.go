@@ -16,12 +16,21 @@ import (
 // Replica selects the experimental shared-subscription topology. All replicas
 // must use identical inventory, actor app identity, state component and group.
 type Replica struct {
-	InstanceID         string `json:"instance_id"`
-	SharedGroup        string `json:"shared_group"`
-	AppID              string `json:"app_id"`
-	StateStore         string `json:"state_store"`
-	SnapshotEtcdURL    string `json:"snapshot_etcd_url"`
-	SnapshotEtcdPrefix string `json:"snapshot_etcd_prefix"`
+	InstanceID         string   `json:"instance_id"`
+	SharedGroup        string   `json:"shared_group"`
+	AppID              string   `json:"app_id"`
+	StateStore         string   `json:"state_store"`
+	SnapshotEtcdURL    string   `json:"snapshot_etcd_url,omitempty"`
+	SnapshotEtcdURLs   []string `json:"snapshot_etcd_urls,omitempty"`
+	SnapshotEtcdPrefix string   `json:"snapshot_etcd_prefix"`
+}
+
+// SnapshotEndpoints retains compatibility with the original single URL field.
+func (r Replica) SnapshotEndpoints() []string {
+	if len(r.SnapshotEtcdURLs) > 0 {
+		return append([]string(nil), r.SnapshotEtcdURLs...)
+	}
+	return []string{r.SnapshotEtcdURL}
 }
 
 // FleetProjection is a local, rebuildable status view; it is never command state.
@@ -174,7 +183,10 @@ func (c Config) Validate() error {
 	}
 	if a := c.ActorCanary; a != nil && a.Replica != nil {
 		r := a.Replica
-		if err := deviceactor.ValidateEtcdLocation(r.SnapshotEtcdURL, r.SnapshotEtcdPrefix); err != nil {
+		if r.SnapshotEtcdURL != "" && len(r.SnapshotEtcdURLs) > 0 {
+			return fmt.Errorf("choose snapshot_etcd_url or snapshot_etcd_urls")
+		}
+		if err := deviceactor.ValidateEtcdEndpoints(r.SnapshotEndpoints(), r.SnapshotEtcdPrefix); err != nil {
 			return fmt.Errorf("replica requires independent snapshot etcd: %w", err)
 		}
 		if !a.Enabled || len(a.Devices) != len(c.Agents) {

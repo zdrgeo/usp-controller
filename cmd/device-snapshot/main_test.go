@@ -62,3 +62,20 @@ func TestRestoreRequiresExplicitLiveVersion(t *testing.T) {
 		t.Fatal("missing updated inspection", output.String())
 	}
 }
+
+func TestInspectRepeatedEtcdEndpoints(t *testing.T) {
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(503) }))
+	defer first.Close()
+	snapshot := `{"Schema":3,"Identity":{"Tenant":"t","ControllerID":"c","AgentID":"d"},"Desired":{},"Reported":{},"Receipts":{},"Commands":{},"Inbox":{}}`
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct{ Key string }
+		json.NewDecoder(r.Body).Decode(&req)
+		json.NewEncoder(w).Encode(map[string]any{"header": map[string]string{"cluster_id": "11"}, "kvs": []any{map[string]string{"key": req.Key, "value": base64.StdEncoding.EncodeToString([]byte(snapshot)), "mod_revision": "8"}}})
+	}))
+	defer second.Close()
+	var output bytes.Buffer
+	args := []string{"-action", "inspect", "-tenant", "t", "-controller", "c", "-device", "d", "-etcd-prefix", "/test/", "-etcd-url", first.URL, "-etcd-url", second.URL}
+	if e := run(args, strings.NewReader(""), &output); e != nil || !strings.Contains(output.String(), `"current_etag":"8"`) {
+		t.Fatal("CLI failover", output.String(), e)
+	}
+}

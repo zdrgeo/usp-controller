@@ -107,7 +107,7 @@ func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, 
 		}
 		var stateBackend deviceactor.Backend = backend
 		if a.Replica != nil {
-			stateBackend, err = deviceactor.NewEtcdSnapshotBackend(a.DaprURL, apiToken, a.Replica.SnapshotEtcdURL, a.Replica.SnapshotEtcdPrefix, os.Getenv("ETCD_AUTH_TOKEN"), rt.etcdClient, identity, 10*time.Second, opts.MaxBytes)
+			stateBackend, err = deviceactor.NewEtcdSnapshotBackendEndpoints(a.DaprURL, apiToken, a.Replica.SnapshotEndpoints(), a.Replica.SnapshotEtcdPrefix, os.Getenv("ETCD_AUTH_TOKEN"), rt.etcdClient, identity, 10*time.Second, opts.MaxBytes)
 			if err != nil {
 				return fail(err)
 			}

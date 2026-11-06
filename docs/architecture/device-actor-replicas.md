@@ -24,10 +24,15 @@ Add `replica` inside an enabled phase-4 `actor_canary` configuration:
   "shared_group": "site-001-controller",
   "app_id": "usp-controller-site-001",
   "state_store": "device-actor-state",
-  "snapshot_etcd_url": "https://snapshot-etcd.example:2379",
+  "snapshot_etcd_urls": ["https://etcd-a.example:2379", "https://etcd-b.example:2379", "https://etcd-c.example:2379"],
   "snapshot_etcd_prefix": "/usp/site-001/snapshots/"
 }
 ```
+
+Configure one to five snapshot endpoints from the same etcd cluster. The old
+`snapshot_etcd_url` field is supported on its own for single-endpoint deployments.
+Reads fail over automatically; ambiguous transactions return an error and require
+stable-ID recovery. See the [failover contract](device-etcd-snapshots.md).
 
 The instance/group/app/store values are nonempty simple names (letters, digits, dot, underscore, hyphen).
 Set a distinct `instance_id` in each replica's generated configuration. The MQTT

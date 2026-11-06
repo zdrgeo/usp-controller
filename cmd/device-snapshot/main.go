@@ -19,7 +19,8 @@ func run(args []string, input io.Reader, output io.Writer) error {
 	flags := flag.NewFlagSet("device-snapshot", flag.ContinueOnError)
 	action := flags.String("action", "", "inspect, initialize, migrate-legacy, import, or restore")
 	endpoint := flags.String("dapr-url", "http://127.0.0.1:3500", "local Dapr endpoint")
-	etcdURL := flags.String("etcd-url", "", "independent etcd JSON gateway")
+	var etcdURLs []string
+	flags.Func("etcd-url", "etcd JSON gateway; repeat for failover", func(value string) error { etcdURLs = append(etcdURLs, value); return nil })
 	etcdPrefix := flags.String("etcd-prefix", "", "site snapshot namespace ending in slash")
 	store := flags.String("state-store", "", "configured replica state store")
 	tenant := flags.String("tenant", "", "device tenant")
@@ -29,7 +30,7 @@ func run(args []string, input io.Reader, output io.Writer) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if flags.NArg() != 0 || *tenant == "" || *controller == "" || *agent == "" || ((*store == "") == (*etcdURL == "")) {
+	if flags.NArg() != 0 || *tenant == "" || *controller == "" || *agent == "" || ((*store == "") == (len(etcdURLs) == 0)) {
 		return fmt.Errorf("tenant, controller, device and exactly one of state-store or etcd-url are required")
 	}
 	if *action != "inspect" && *action != "initialize" && *action != "migrate-legacy" && *action != "restore" && *action != "import" {
@@ -41,12 +42,12 @@ func run(args []string, input io.Reader, output io.Writer) error {
 	var b *deviceactor.FencedDaprBackend
 	var err error
 	id := device.DeviceIdentity{Tenant: *tenant, ControllerID: *controller, AgentID: *agent}
-	if *etcdURL != "" {
+	if len(etcdURLs) > 0 {
 		client, e := deviceactor.EtcdHTTPClient(os.Getenv("ETCD_CA_FILE"), os.Getenv("ETCD_CERT_FILE"), os.Getenv("ETCD_KEY_FILE"))
 		if e != nil {
 			return e
 		}
-		b, err = deviceactor.NewEtcdSnapshotBackend(*endpoint, os.Getenv("DAPR_API_TOKEN"), *etcdURL, *etcdPrefix, os.Getenv("ETCD_AUTH_TOKEN"), client, id, time.Second, 1<<20)
+		b, err = deviceactor.NewEtcdSnapshotBackendEndpoints(*endpoint, os.Getenv("DAPR_API_TOKEN"), etcdURLs, *etcdPrefix, os.Getenv("ETCD_AUTH_TOKEN"), client, id, time.Second, 1<<20)
 	} else {
 		if *etcdPrefix != "" {
 			return fmt.Errorf("etcd-prefix requires etcd-url")

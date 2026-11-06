@@ -62,6 +62,7 @@ type liveHost struct {
 	placement                 *tcpPartition
 	state                     *tcpPartition
 	snapshots                 *tcpPartition
+	failoverSnapshots         []*tcpPartition
 	saves                     map[string]*heldSave
 	mutations                 map[string]*atomic.Int64
 	client                    *deviceactor.Client
@@ -141,6 +142,10 @@ func TestLiveDapr(t *testing.T) {
 	etcdID.AgentID = "etcd-device"
 	identities = append(identities, etcdID)
 	inventory[etcdID.AgentID] = etcdID
+	autoID := id
+	autoID.AgentID = "etcd-auto"
+	identities = append(identities, autoID)
+	inventory[autoID.AgentID] = autoID
 	transport := &offlineTransport{}
 	newHost := func(index int) *liveHost {
 		t.Helper()
@@ -148,6 +153,9 @@ func TestLiveDapr(t *testing.T) {
 		h.placement = newTCPPartition(t, docker(t, "port", placement, "50005/tcp"))
 		h.state = newTCPPartition(t, docker(t, "port", redis, "6379/tcp"))
 		h.snapshots = newTCPPartition(t, docker(t, "port", etcd, "2379/tcp"))
+		for _, member := range members {
+			h.failoverSnapshots = append(h.failoverSnapshots, newTCPPartition(t, docker(t, "port", member, "2379/tcp")))
+		}
 		hostResources := t.TempDir()
 		for _, component := range []string{"state", "events"} {
 			b, err := os.ReadFile(filepath.Join(resources, component+".yaml"))
@@ -188,6 +196,9 @@ func TestLiveDapr(t *testing.T) {
 			backend, err := deviceactor.NewFencedDaprBackend(endpoint, nil, token, identity, time.Second, opts.MaxBytes, "state")
 			if identity.AgentID == etcdID.AgentID {
 				backend, err = newLiveEtcdBackend(h, identity)
+			}
+			if identity.AgentID == autoID.AgentID {
+				backend, err = newLiveFailoverBackend(h, identity)
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -268,6 +279,9 @@ func TestLiveDapr(t *testing.T) {
 		if identity.AgentID == etcdID.AgentID {
 			b, err = newLiveEtcdBackend(hosts[0], identity)
 		}
+		if identity.AgentID == autoID.AgentID {
+			b, err = newLiveFailoverBackend(hosts[0], identity)
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -296,6 +310,9 @@ func TestLiveDapr(t *testing.T) {
 		return
 	}
 	if !t.Run("etcd leader failover", func(t *testing.T) { testEtcdLeadership(t, hosts, members, etcdID, false) }) {
+		return
+	}
+	if !t.Run("etcd automatic endpoint failover", func(t *testing.T) { testEtcdAutomaticFailover(t, hosts, members, autoID) }) {
 		return
 	}
 	unauthorized := *hosts[0].client
