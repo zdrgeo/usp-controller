@@ -349,3 +349,37 @@ Validated on 2026-11-06: `go test -race ./...`, `go vet ./...`, and the complete
 suite passed. The live suite completed in 314.470 seconds, including all three
 automatic failover cases and the existing packet-loss, quorum, restore and fencing
 checks. This remains single-machine qualification with offline device transport.
+
+## Multi-endpoint packet loss and quorum loss
+
+`etcd multi-endpoint packet loss` runs control, outbound-only, inbound-only and
+half-open cases against the preferred member's client port 2379. Directions are
+relative to the etcd server. The half-open case verifies that an original TCP
+connection remains established during the black hole. Peer links and alternate
+client endpoints remain healthy. A preloaded transaction must return an ambiguous
+error through the dropped path, invalidate its loaded version, and allow the next
+read through an alternate endpoint within the bounded read budget. Both Dapr
+routes must admit and return the same receipt **before** the fault is healed.
+After healing, the receipt remains stable and a separate stale writer is rejected.
+
+`etcd multi-endpoint quorum loss` isolates peer port 2380 on one member, proves
+majority admission, then isolates another member. All three client listeners stay
+reachable and can serve local serializable reads, but no member retains leadership.
+The fixed endpoint list must reject a linearizable snapshot read, preloaded CAS,
+and actor reads/writes on both sidecars. The failed snapshot read is checked against
+the five-second total budget with one second of scheduling tolerance. Healing one
+peer restores majority admission and the stable receipt; healing the last peer
+preserves it. A stale writer and a failed writer's invalidated version cannot
+replace recovered state.
+
+These scenarios refresh Docker's ephemeral port mappings and select the initial
+endpoint before injection only. They do not retarget proxies, rebuild clients or
+change endpoint lists during a fault. Packet-drop counters verify fault injection.
+All rules are confined to disposable container namespaces; transport to devices
+remains offline. Production code and configuration are unchanged; legacy remains
+the default.
+
+Validated on 2026-11-08: `go test -race ./...`, `go vet ./...`, and the complete
+`USP_TEST_DAPR=1 go test -race -count=1 -v -timeout=15m ./internal/integration`
+suite passed. The live suite completed in 405.894 seconds, including all four
+multi-endpoint packet-loss cases and the multi-endpoint quorum-loss case.

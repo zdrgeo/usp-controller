@@ -315,6 +315,14 @@ func TestLiveDapr(t *testing.T) {
 	if !t.Run("etcd automatic endpoint failover", func(t *testing.T) { testEtcdAutomaticFailover(t, hosts, members, autoID) }) {
 		return
 	}
+	for _, mode := range []string{"control", "outbound", "inbound", "half-open"} {
+		if !t.Run("etcd multi-endpoint packet loss/"+mode, func(t *testing.T) { testMultiEndpointPacketLoss(t, hosts, members, autoID, mode) }) {
+			return
+		}
+	}
+	if !t.Run("etcd multi-endpoint quorum loss", func(t *testing.T) { testMultiEndpointQuorumLoss(t, hosts, members, autoID) }) {
+		return
+	}
 	unauthorized := *hosts[0].client
 	unauthorized.Token = "wrong"
 	if _, err := unauthorized.Invoke(context.Background(), id, "GetTwin", nil); err == nil {
