@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"testing"
 	"time"
 
@@ -12,12 +13,34 @@ import (
 )
 
 func newLiveFailoverBackend(h *liveHost, id device.DeviceIdentity) (*deviceactor.FencedDaprBackend, error) {
+	return newLiveFailoverBackendWithClient(h, id, nil)
+}
+func newLiveFailoverBackendWithClient(h *liveHost, id device.DeviceIdentity, client *http.Client) (*deviceactor.FencedDaprBackend, error) {
 	endpoints := make([]string, len(h.failoverSnapshots))
 	for i, p := range h.failoverSnapshots {
 		endpoints[i] = fmt.Sprintf("http://127.0.0.1:%d", p.listener.Addr().(*net.TCPAddr).Port)
 	}
-	return deviceactor.NewEtcdSnapshotBackendEndpoints(h.client.Endpoint, token, endpoints, etcdPrefix, "", nil, id, time.Second, 1<<20)
+	return deviceactor.NewEtcdSnapshotBackendEndpoints(h.client.Endpoint, token, endpoints, etcdPrefix, "", client, id, time.Second, 1<<20)
 }
+
+// Removing DROP rules does not instantly recover an idle TCP stream or the
+// gateway's internal client. Wait for a real read on this specific endpoint,
+// without consuming or refreshing the separate stale writer's loaded version.
+func waitLiveEtcdEndpoint(t *testing.T, h *liveHost, id device.DeviceIdentity, index int) {
+	t.Helper()
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	defer transport.CloseIdleConnections()
+	endpoint := fmt.Sprintf("http://127.0.0.1:%d", h.failoverSnapshots[index].listener.Addr().(*net.TCPAddr).Port)
+	probe, err := deviceactor.NewEtcdSnapshotBackend(h.client.Endpoint, token, endpoint, etcdPrefix, "", &http.Client{Transport: transport, Timeout: 5 * time.Second}, id, time.Second, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, fmt.Sprintf("etcd endpoint %d serves reads after healing", index), func() bool {
+		_, err := probe.Load(context.Background())
+		return err == nil
+	})
+}
+
 func testEtcdAutomaticFailover(t *testing.T, hosts []*liveHost, members []string, id device.DeviceIdentity) {
 	for _, mode := range []string{"connection loss", "peer partition", "leader kill"} {
 		if !t.Run(mode, func(t *testing.T) {
@@ -76,10 +99,12 @@ func testEtcdAutomaticFailover(t *testing.T, hosts []*liveHost, members []string
 						majority = append(majority, i)
 					}
 				}
-				_, after := electedLeader(t, members, majority, before.Leader)
-				if after.Term <= before.Term {
-					t.Fatal("no replacement election")
-				}
+				// Status can expose the new leader before its reported term has
+				// caught up. Require both observations, within the existing deadline.
+				eventually(t, "replacement leader reports a higher term", func() bool {
+					_, after := electedLeader(t, members, majority, before.Leader)
+					return after.Term > before.Term
+				})
 				if mode == "peer partition" {
 					eventually(t, "isolated leader steps down", func() bool { return memberStatus(t, members[leader]).Leader == 0 })
 				}

@@ -383,3 +383,48 @@ Validated on 2026-11-08: `go test -race ./...`, `go vet ./...`, and the complete
 `USP_TEST_DAPR=1 go test -race -count=1 -v -timeout=15m ./internal/integration`
 suite passed. The live suite completed in 405.894 seconds, including all four
 multi-endpoint packet-loss cases and the multi-endpoint quorum-loss case.
+
+## All-endpoint packet loss and staged recovery
+
+`etcd all-endpoint packet loss` covers outbound-only, inbound-only and half-open
+black holes across all three configured client endpoints simultaneously. Directions
+are relative to the etcd servers. Each client path is warmed before injection;
+the half-open case checks that an original established connection survives at each
+member. Rules target only client port 2379, leaving peer port 2380 untouched. The
+leader and term must remain unchanged across the scenario.
+
+A preloaded transaction must return an ambiguous error. Snapshot reads must fail
+within the five-second total budget (one second of scheduling tolerance), and a
+250 ms caller deadline must also be honored (one second maximum elapsed). Both
+Dapr routes must reject actor reads and desired-state admission while every client
+path is black-holed. Packet-drop counters are checked on every member.
+
+Recovery first heals only the **last configured endpoint**. The existing backend
+must recover through bounded read attempts, and both actor routes must return
+one stable receipt while the earlier endpoints remain blocked. Healing all paths
+must restore successful reads through each individual endpoint, preserve that
+receipt and reject a separately retained stale version. Endpoint readiness uses a
+separate read probe, so it does not refresh the stale writer's loaded version. A failed
+writer cannot reuse its invalidated version after partial recovery. Endpoints,
+proxy targets and backends are not replaced during injection or recovery. The
+separate stale-writer probes in both packet-loss cohorts close only their idle TCP
+connections after healing,
+retaining their loaded versions so that the CAS check reaches etcd rather than timing
+out on a connection still in retransmission backoff. Actor recovery uses existing
+clients without this intervention.
+
+This extends the multi-endpoint control and preferred-endpoint tests above. All
+faults are limited to disposable container namespaces with offline device
+transport. No production code or default configuration changes are required;
+legacy remains the default.
+
+The existing automatic leader-kill check also waits for the replacement leader's
+reported term to advance, rather than failing on a transient status sample that
+already exposes the new leader but still reports the preceding term. Both a new
+leader and a higher term remain required.
+
+Validated on 2026-11-08: `go test -race ./...`, `go vet ./...`, and the complete
+`USP_TEST_DAPR=1 go test -race -count=1 -v -timeout=15m ./internal/integration`
+suite passed. The final full live run completed in 611.485 seconds, including all
+three all-endpoint cases, the recovered-gateway probes, and the existing packet,
+quorum, leadership, restore and fencing checks.

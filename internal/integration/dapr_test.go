@@ -323,6 +323,11 @@ func TestLiveDapr(t *testing.T) {
 	if !t.Run("etcd multi-endpoint quorum loss", func(t *testing.T) { testMultiEndpointQuorumLoss(t, hosts, members, autoID) }) {
 		return
 	}
+	for _, mode := range []string{"outbound", "inbound", "half-open"} {
+		if !t.Run("etcd all-endpoint packet loss/"+mode, func(t *testing.T) { testAllEndpointPacketLoss(t, hosts, members, autoID, mode) }) {
+			return
+		}
+	}
 	unauthorized := *hosts[0].client
 	unauthorized.Token = "wrong"
 	if _, err := unauthorized.Invoke(context.Background(), id, "GetTwin", nil); err == nil {

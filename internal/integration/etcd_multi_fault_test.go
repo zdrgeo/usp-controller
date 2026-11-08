@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -50,7 +51,9 @@ func testMultiEndpointPacketLoss(t *testing.T, hosts []*liveHost, members []stri
 	if e != nil {
 		t.Fatal(e)
 	}
-	stale, e := newLiveFailoverBackend(hosts[1], id)
+	staleTransport := http.DefaultTransport.(*http.Transport).Clone()
+	t.Cleanup(staleTransport.CloseIdleConnections)
+	stale, e := newLiveFailoverBackendWithClient(hosts[1], id, &http.Client{Transport: staleTransport, Timeout: 5 * time.Second})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -100,7 +103,11 @@ func testMultiEndpointPacketLoss(t *testing.T, hosts []*liveHost, members []stri
 		f.assertDrops(t)
 	}
 	f.heal(t)
+	waitLiveEtcdEndpoint(t, hosts[0], id, 0)
 	assertEtcdReceipt(t, hosts, id, r)
+	// Preserve the stale version, but avoid testing retransmission backoff in
+	// place of the CAS fence after healing a half-open client connection.
+	staleTransport.CloseIdleConnections()
 	if e := stale.Save(context.Background(), snapshot); !errors.Is(e, deviceactor.ErrConflict) {
 		t.Fatalf("stale writer survived multi-endpoint recovery: %v", e)
 	}
