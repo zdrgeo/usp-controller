@@ -428,3 +428,36 @@ Validated on 2026-11-08: `go test -race ./...`, `go vet ./...`, and the complete
 suite passed. The final full live run completed in 611.485 seconds, including all
 three all-endpoint cases, the recovered-gateway probes, and the existing packet,
 quorum, leadership, restore and fencing checks.
+
+## Etcd rolling restart and recovery
+
+`etcd rolling restart` gracefully stops and starts each of the three members,
+one at a time, retaining the same container and data directory. It starts with a
+follower, then the original leader, then the remaining member. Before the next
+stop, every member must agree on an elected leader and the restarted gateway must
+serve a linearizable snapshot read. Restarting the current leader must produce a
+different leader with a higher term.
+
+While each member is confirmed stopped, the original multi-endpoint reader must
+recover within bounded read attempts, and both Dapr routes must admit the same
+stable desired-state receipt. No proxy retargeting or member restart is allowed
+before these availability checks pass. After rejoin, all member IDs must match
+their original values, the receipt and exact twin must remain intact, and a writer
+holding a pre-restart version must receive a CAS conflict. Every earlier receipt
+is replayed on both actor routes after the entire roll, and all endpoints must
+serve reads again.
+
+Actor endpoint lists and backend instances stay fixed. Docker can reallocate an
+ephemeral published port when a container starts; after proving availability with
+that member down, the fixture updates only that member's proxy to its new port.
+This restores access to the same member, not a route to another surviving member.
+The separate single-endpoint fixture mapping is refreshed after the drill. These
+are single-machine, same-version restart tests with offline device transport,
+not mixed-version upgrade qualification. Production code and configuration are
+unchanged; legacy remains the default.
+
+Validated on 2026-11-09: `go test -race ./...`, `go vet ./...`, and the complete
+`USP_TEST_DAPR=1 go test -race -count=1 -v -timeout=15m ./internal/integration`
+suite passed. The full live suite completed in 577.264 seconds, including all
+three rolling member restarts and the existing packet-loss, quorum, restore and
+fencing checks. The focused rolling-restart run also passed.

@@ -328,6 +328,9 @@ func TestLiveDapr(t *testing.T) {
 			return
 		}
 	}
+	if !t.Run("etcd rolling restart", func(t *testing.T) { testEtcdRollingRestart(t, hosts, members, autoID) }) {
+		return
+	}
 	unauthorized := *hosts[0].client
 	unauthorized.Token = "wrong"
 	if _, err := unauthorized.Invoke(context.Background(), id, "GetTwin", nil); err == nil {
