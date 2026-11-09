@@ -75,23 +75,7 @@ func testEtcdSnapshotBackupRestore(t *testing.T, hosts []*liveHost, source strin
 		t.Fatalf("corrupt snapshot was not rejected by integrity check: %s %v", output, err)
 	}
 
-	network := fmt.Sprintf("usp-dapr-test-restore-%d", time.Now().UnixNano())
-	docker(t, "network", "create", network)
-	t.Cleanup(func() { docker(t, "network", "rm", network) })
-	cluster := "restore0=http://restore0:2380,restore1=http://restore1:2380,restore2=http://restore2:2380"
-	var members, endpoints []string
-	for i := 0; i < 3; i++ {
-		name := fmt.Sprintf("restore%d", i)
-		volume := network + "-data-" + name
-		docker(t, "volume", "create", volume)
-		t.Cleanup(func() { docker(t, "volume", "rm", volume) })
-		docker(t, "run", "--rm", "--network", "none", "-v", dir+":/backup:ro", "-v", volume+":/restore", etcdImage, "/usr/local/bin/etcdutl", "snapshot", "restore", "/backup/snapshot.db", "--data-dir", "/restore/data", "--name", name, "--initial-cluster", cluster, "--initial-cluster-token", network, "--initial-advertise-peer-urls", "http://"+name+":2380", "--bump-revision", strconv.FormatInt(bump, 10), "--mark-compacted")
-		member := network + "-" + name
-		docker(t, "run", "-d", "--name", member, "--network", network, "--network-alias", name, "-p", "127.0.0.1::2379", "-v", volume+":/restore", etcdImage, "/usr/local/bin/etcd", "--name", name, "--data-dir", "/restore/data", "--listen-client-urls", "http://0.0.0.0:2379", "--advertise-client-urls", "http://"+name+":2379", "--listen-peer-urls", "http://0.0.0.0:2380", "--initial-advertise-peer-urls", "http://"+name+":2380", "--initial-cluster", cluster, "--initial-cluster-token", network)
-		t.Cleanup(func() { docker(t, "rm", "-f", member) })
-		members = append(members, member)
-		endpoints = append(endpoints, "http://"+docker(t, "port", member, "2379/tcp"))
-	}
+	members, endpoints := restoreLiveEtcdSnapshot(t, dir, bump)
 	fresh := func() *deviceactor.FencedDaprBackend {
 		tr := http.DefaultTransport.(*http.Transport).Clone()
 		t.Cleanup(tr.CloseIdleConnections)
@@ -165,4 +149,28 @@ func testEtcdSnapshotBackupRestore(t *testing.T, hosts []*liveHost, source strin
 	}
 	assertEtcdReceipt(t, hosts, id, later)
 	t.Log("native snapshot integrity, isolated three-member restore, revision bump/compaction, point-in-time twin/receipt and fresh-writer fencing passed; source unchanged")
+}
+
+// Restore only into new disposable volumes on an isolated network.
+func restoreLiveEtcdSnapshot(t *testing.T, dir string, bump int64) ([]string, []string) {
+	t.Helper()
+	const etcdImage = "gcr.io/etcd-development/etcd:v3.5.17"
+	network := fmt.Sprintf("usp-dapr-test-restore-%d", time.Now().UnixNano())
+	docker(t, "network", "create", network)
+	t.Cleanup(func() { docker(t, "network", "rm", network) })
+	cluster := "restore0=http://restore0:2380,restore1=http://restore1:2380,restore2=http://restore2:2380"
+	var members, endpoints []string
+	for i := 0; i < 3; i++ {
+		name := fmt.Sprintf("restore%d", i)
+		volume := network + "-data-" + name
+		docker(t, "volume", "create", volume)
+		t.Cleanup(func() { docker(t, "volume", "rm", volume) })
+		docker(t, "run", "--rm", "--network", "none", "-v", dir+":/backup:ro", "-v", volume+":/restore", etcdImage, "/usr/local/bin/etcdutl", "snapshot", "restore", "/backup/snapshot.db", "--data-dir", "/restore/data", "--name", name, "--initial-cluster", cluster, "--initial-cluster-token", network, "--initial-advertise-peer-urls", "http://"+name+":2380", "--bump-revision", strconv.FormatInt(bump, 10), "--mark-compacted")
+		member := network + "-" + name
+		docker(t, "run", "-d", "--name", member, "--network", network, "--network-alias", name, "-p", "127.0.0.1::2379", "-v", volume+":/restore", etcdImage, "/usr/local/bin/etcd", "--name", name, "--data-dir", "/restore/data", "--listen-client-urls", "http://0.0.0.0:2379", "--advertise-client-urls", "http://"+name+":2379", "--listen-peer-urls", "http://0.0.0.0:2380", "--initial-advertise-peer-urls", "http://"+name+":2380", "--initial-cluster", cluster, "--initial-cluster-token", network)
+		t.Cleanup(func() { docker(t, "rm", "-f", member) })
+		members = append(members, member)
+		endpoints = append(endpoints, "http://"+docker(t, "port", member, "2379/tcp"))
+	}
+	return members, endpoints
 }

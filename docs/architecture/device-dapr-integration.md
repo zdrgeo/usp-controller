@@ -532,3 +532,53 @@ Validated on 2026-11-09: `go test -race ./...`, `go vet ./...`, and the complete
 suite passed. The full live run completed in 659.253 seconds, including the native
 snapshot backup/restore case and all existing restart, packet-loss, quorum and
 fencing checks. The focused backup/restore run also passed.
+
+## Restore cutover and stale transactions
+
+`etcd restore cutover` uses a dedicated, quiescent device key outside the Dapr
+inventory, stable gateway proxies, and two disposable native restores of the same
+backup. The test actors have no reminders, publishers or device transport. The
+source advances after backup, providing both pre-backup and post-backup writers.
+
+The **unguarded negative control** shows why a response error is insufficient.
+Native restore preserves the key's modification revision even when the global
+revision is bumped and history compacted. A pre-backup writer can therefore commit
+through an unchanged gateway URL to the restored key. The multi-endpoint client
+then rejects the response's changed cluster ID, but an independent read confirms
+that its write already committed. This is a regression test of an unsupported
+cutover, not a supported runtime guarantee.
+
+The **guarded cutover** keeps admission closed and uses the existing
+`ExportSnapshot` / `RestoreSnapshot` administrative API to conditionally rewrite
+the restored application snapshot against its freshly inspected target ETag.
+Before opening the new authority, the resulting per-key modification revision
+must exceed the observed source versions. The test's complete admitted inventory
+is one explicit device; a real cohort must cover every admitted key and keep
+admission closed if any key is missing or any rewrite fails.
+
+A transaction is held before network dispatch, while it still carries a
+pre-backup version. The stable proxy URLs are switched and the transaction is
+released into the restored cluster. The test inspects etcd's transaction response
+to require `succeeded=false`, then independently verifies that both bytes and ETag
+are unchanged. It repeats those state audits for pre- and post-backup
+single-endpoint writers and a post-backup multi-endpoint writer. Historical
+restore authorization is rejected, and an old cluster-pinned backend cannot load
+the replacement cluster. Fresh clients recover the backup twin and receipt,
+admit one new request idempotently, and retain ordinary CAS fencing. The retired
+source state remains unchanged.
+
+This qualifies a guarded offline cutover rehearsal using existing APIs, not an
+automated production cutover. Retire old processes and revoke their access before
+reopening admission; rewriting ETags fences buffered stale transactions, not an
+old process that is allowed to load a new version. In particular, single-endpoint
+clients do not pin cluster identity. Cluster-ID response checks and revision bumps
+are not atomic write fences. Source and restored authority access, complete
+inventory validation, and external-effect reconciliation remain operator duties.
+Legacy remains the default; no production code or configuration is changed.
+
+Validated on 2026-11-09: `go test -race ./...`, `go vet ./...`, and the complete
+`USP_TEST_DAPR=1 go test -race -count=1 -v -timeout=15m ./internal/integration`
+suite passed. The full live run completed in 649.106 seconds, including both the
+unguarded negative control and guarded restore cutover, plus all existing backup,
+restart, packet-loss, quorum and fencing checks. The focused native restore and
+cutover run also passed.

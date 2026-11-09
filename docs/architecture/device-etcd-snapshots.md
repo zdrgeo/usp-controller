@@ -63,6 +63,8 @@ redirects, certificate verification errors and malformed responses fail closed.
 Multi-endpoint backends pin the cluster ID from their first successful response
 and reject subsequent responses from a different cluster. This is a per-backend
 check, not a substitute for verifying configuration before startup or restore.
+It runs after the response: a transaction may have committed before a changed
+cluster ID is reported. It is not an atomic write fence.
 
 Transactions are submitted once per call. A transport/server failure rotates the
 preferred endpoint for the **next** call but returns the ambiguous error and
@@ -139,6 +141,15 @@ The live suite now includes an
 checksum rejection, three-member restore with revision bump and compaction,
 point-in-time actor state/receipts, and fresh-writer CAS fencing. It does not repoint
 surviving writers or qualify a production disaster-recovery cutover.
+
+A [guarded cutover rehearsal](device-dapr-integration.md#restore-cutover-and-stale-transactions)
+now demonstrates conditional per-key rewrites before admission opens, followed by
+fresh clients. Its negative control confirms that native restore can preserve a
+stale key ETag despite a global revision bump, and that a cluster-ID error can
+arrive after a transaction commits. The guard must cover the complete admitted
+inventory and advance each key beyond observed source versions. Old processes
+and credentials must still be retired: this guards buffered stale transactions,
+not old processes permitted to reload new versions.
 
 ## Tests and scope
 

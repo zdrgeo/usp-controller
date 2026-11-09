@@ -339,6 +339,9 @@ func TestLiveDapr(t *testing.T) {
 	if !t.Run("etcd snapshot backup restore", func(t *testing.T) { testEtcdSnapshotBackupRestore(t, hosts, members[0], autoID) }) {
 		return
 	}
+	if !t.Run("etcd restore cutover", func(t *testing.T) { testEtcdRestoreCutover(t, members[0], autoID) }) {
+		return
+	}
 	unauthorized := *hosts[0].client
 	unauthorized.Token = "wrong"
 	if _, err := unauthorized.Invoke(context.Background(), id, "GetTwin", nil); err == nil {
