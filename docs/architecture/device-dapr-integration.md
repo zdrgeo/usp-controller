@@ -493,3 +493,42 @@ Validated on 2026-11-09: `go test -race ./...`, `go vet ./...`, and the complete
 suite passed. The full live run completed in 643.766 seconds, including graceful
 and abrupt full-cluster recovery plus the existing rolling restart, packet-loss,
 quorum, restore and fencing checks. Both new cases also passed in a focused run.
+
+## Native etcd snapshot backup and isolated restore
+
+`etcd snapshot backup restore` takes a real `etcdctl snapshot save` backup from
+the live source cluster after a linearizable read on the chosen member. It checks
+snapshot hash/revision/key metadata with the pinned etcd 3.5.17 `etcdutl`, then
+advances the source twin. A copy with a damaged appended checksum must fail restore
+without `--skip-hash-check`.
+
+All three restored members are built from the same valid backup into fresh named
+volumes on a separate Docker network. The restore uses a new cluster token,
+`--bump-revision 1000000` and `--mark-compacted`; the test verifies new cluster
+identity, agreement among the restored members, a revision above both the backup
+plus the bump and the observed post-backup source revision, and rejection of reads
+at the compacted backup revision. The fixed bump is a bounded test value, not a
+production sizing recommendation. See [etcd recovery guidance](https://etcd.io/docs/v3.5/op-guide/recovery/).
+
+Fresh backend clients load the restored state without initialization or implicit
+import. An offline Device Actor verifies the backup's exact desired twin and
+idempotent receipt. It admits a distinct payload under the source's post-backup
+request ID, proving that later receipt was absent from the backup. A second writer
+retaining the earlier restored revision must receive a CAS conflict, and the
+recovered twin must remain unchanged. The source's later twin and receipt must
+also remain unchanged, demonstrating isolation.
+
+The restored actor uses the real etcd backend and actor state/receipt logic but
+has a no-op reminder adapter, no transport and no event publisher. It is not
+registered with the source Dapr deployment. Source endpoints are never repointed;
+no surviving source writer is connected to the restored cluster. This qualifies
+native snapshot integrity and an isolated restore rehearsal, not an in-place
+production cutover, external device reconciliation or safe rollback with surviving
+writers. All restored containers, volumes and networks are disposable and cleaned
+up. Production code and configuration are unchanged; legacy remains the default.
+
+Validated on 2026-11-09: `go test -race ./...`, `go vet ./...`, and the complete
+`USP_TEST_DAPR=1 go test -race -count=1 -v -timeout=15m ./internal/integration`
+suite passed. The full live run completed in 659.253 seconds, including the native
+snapshot backup/restore case and all existing restart, packet-loss, quorum and
+fencing checks. The focused backup/restore run also passed.

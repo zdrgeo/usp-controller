@@ -134,6 +134,12 @@ writers and a separately qualified disaster-recovery procedure (including revisi
 handling and external effects). Never point replicas to an empty namespace to
 reset a device. Direct administrative imports remain explicit operator actions.
 
+The live suite now includes an
+[isolated native backup/restore rehearsal](device-dapr-integration.md#native-etcd-snapshot-backup-and-isolated-restore):
+checksum rejection, three-member restore with revision bump and compaction,
+point-in-time actor state/receipts, and fresh-writer CAS fencing. It does not repoint
+surviving writers or qualify a production disaster-recovery cutover.
+
 ## Tests and scope
 
 The 2026-11-05 peer-partition/leader-failover extension passed the full race-enabled
@@ -201,8 +207,9 @@ an error and the next read recovers through an alternate endpoint.
 
 The older packet-loss tests still exercise the Redis compatibility cohort and
 Placement. All tests are single-machine qualification with offline transport.
-Whole-cluster etcd rollback, arbitrary/asymmetric peer partitions, WAN timing and
-real-device effects remain open gates.
+In-place etcd rollback with surviving clients, arbitrary/asymmetric peer
+partitions, WAN timing and real-device effects remain open gates. The isolated
+backup/restore rehearsal above does not qualify a production cutover.
 
 References: [etcd API guarantees](https://etcd.io/docs/v3.5/learning/api_guarantees/),
 [etcd JSON gateway](https://etcd.io/docs/v3.5/dev-guide/api_grpc_gateway/),
