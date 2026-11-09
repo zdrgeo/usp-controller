@@ -26,6 +26,7 @@ type cutoverTxnGate struct {
 	next             http.RoundTripper
 	entered, release chan struct{}
 	response         chan bool
+	errorBody        string // read only after the gated request completes
 }
 
 func (g *cutoverTxnGate) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -48,6 +49,9 @@ func (g *cutoverTxnGate) RoundTrip(r *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 	response.Body = io.NopCloser(bytes.NewReader(data))
+	if response.StatusCode != http.StatusOK {
+		g.errorBody = string(data)
+	}
 	var result struct {
 		Succeeded bool `json:"succeeded"`
 	}
@@ -106,13 +110,17 @@ func testEtcdRestoreCutover(t *testing.T, source string, base device.DeviceIdent
 		return r
 	}
 	unsafeRoute, safeRoute := makeRoute(), makeRoute()
-	unsafeOld := fresh(unsafeRoute.urls, nil)
+	unguardedTransport := http.DefaultTransport.(*http.Transport).Clone()
+	t.Cleanup(unguardedTransport.CloseIdleConnections)
+	unguardedGate := &cutoverTxnGate{next: unguardedTransport, entered: make(chan struct{}), release: make(chan struct{}), response: make(chan bool, 1)}
+	unsafeOld := fresh(unsafeRoute.urls, unguardedGate)
+	unsafeSingle := fresh(unsafeRoute.urls[:1], nil)
 	preSingle := fresh(safeRoute.urls[:1], nil)
 	gateTransport := http.DefaultTransport.(*http.Transport).Clone()
 	t.Cleanup(gateTransport.CloseIdleConnections)
 	gate := &cutoverTxnGate{next: gateTransport, entered: make(chan struct{}), release: make(chan struct{}), response: make(chan bool, 1)}
 	delayed := fresh(safeRoute.urls, gate)
-	for _, b := range []*deviceactor.FencedDaprBackend{unsafeOld, preSingle, delayed} {
+	for _, b := range []*deviceactor.FencedDaprBackend{unsafeOld, unsafeSingle, preSingle, delayed} {
 		_, tag, err := b.ExportSnapshot(ctx)
 		if err != nil || tag != backupETag {
 			t.Fatalf("pre-backup version: %s %v", tag, err)
@@ -151,7 +159,7 @@ func testEtcdRestoreCutover(t *testing.T, source string, base device.DeviceIdent
 			p.setBlocked(false)
 		}
 	}
-	if !t.Run("unguarded error is not fencing", func(t *testing.T) {
+	if !t.Run("unguarded cutover rejects stale writes atomically", func(t *testing.T) {
 		_, urls := restoreLiveEtcdSnapshot(t, dir, 1000000)
 		inspect := fresh(urls, nil)
 		eventually(t, "unguarded restored key readable", func() bool { _, err := inspect.Load(ctx); return err == nil })
@@ -159,17 +167,39 @@ func testEtcdRestoreCutover(t *testing.T, source string, base device.DeviceIdent
 		if err != nil || tag != backupETag {
 			t.Fatalf("native restore did not preserve old key revision: %s %v", tag, err)
 		}
+		done := make(chan struct{})
+		var writeErr error
+		var release sync.Once
+		go func() { writeErr = unsafeOld.Save(ctx, []byte(`{"unguarded_stale_write":true}`)); close(done) }()
+		t.Cleanup(func() { release.Do(func() { close(unguardedGate.release) }); <-done })
+		select {
+		case <-unguardedGate.entered:
+		case <-time.After(2 * time.Second):
+			t.Fatal("old transaction did not reach gate")
+		}
 		switchRoute(unsafeRoute, urls)
-		poison := []byte(`{"unguarded_stale_write":true}`)
-		err = unsafeOld.Save(ctx, poison)
-		if err == nil || !strings.Contains(err.Error(), "cluster identity") {
-			t.Fatalf("expected post-response cluster mismatch: %v", err)
+		release.Do(func() { close(unguardedGate.release) })
+		<-done
+		if writeErr == nil || !strings.Contains(writeErr.Error(), "HTTP 400") || !strings.Contains(unguardedGate.errorBody, "compacted") {
+			t.Fatalf("expected server rejection of compacted transaction: %v %s", writeErr, unguardedGate.errorBody)
 		}
-		actual, err := inspect.Load(ctx)
-		if err != nil || !bytes.Equal(actual, poison) {
-			t.Fatalf("negative control did not expose committed stale write: %s %v", actual, err)
+		for _, old := range []*deviceactor.FencedDaprBackend{unsafeOld, unsafeSingle} {
+			if err := old.Save(ctx, []byte(`{"unguarded_stale_write":true}`)); err == nil {
+				t.Fatal("stale write acknowledged")
+			}
+			actual, tag, err := inspect.ExportSnapshot(ctx)
+			if err != nil || tag != backupETag || !bytes.Equal(actual.Snapshot, saved.Snapshot) {
+				t.Fatalf("stale transaction modified restored snapshot: %s %v", tag, err)
+			}
+			if _, err := old.Load(ctx); err == nil || !strings.Contains(err.Error(), "cluster identity") {
+				t.Fatalf("old backend adopted restored cluster: %v", err)
+			}
 		}
-		t.Log("unsupported raw cutover returned an error after committing: revision bump and response cluster-ID checks are not write fences")
+		// Fresh clients can immediately write without a per-key rewrite.
+		if err := inspect.RestoreSnapshot(ctx, saved, backupETag); err != nil {
+			t.Fatalf("fresh restored writer failed: %v", err)
+		}
+		t.Log("single and multi-endpoint stale writes rejected without modifying restored bytes or revision")
 	}) {
 		return
 	}
@@ -230,7 +260,7 @@ func testEtcdRestoreCutover(t *testing.T, source string, base device.DeviceIdent
 		}
 		unchanged()
 		for _, b := range []*deviceactor.FencedDaprBackend{preSingle, postSingle} {
-			if err := b.Save(ctx, []byte(`{"stale_write":true}`)); !errors.Is(err, deviceactor.ErrConflict) {
+			if err := b.Save(ctx, []byte(`{"stale_write":true}`)); err == nil {
 				t.Fatalf("single-endpoint stale version was not rejected by CAS: %v", err)
 			}
 			unchanged()

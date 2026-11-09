@@ -28,6 +28,7 @@ type etcdSnapshots struct {
 	endpoints  []string
 	preferred  int
 	clusterID  string
+	witness    string
 	key, token string
 	client     *http.Client
 	maxBytes   int
@@ -153,23 +154,21 @@ func (e *etcdSnapshots) call(ctx context.Context, path string, input, output any
 		cancelAttempt()
 		if err == nil {
 			// A configured endpoint must not silently switch a running backend to a
-			// different cluster. Single-endpoint compatibility retains the old contract.
-			if len(e.endpoints) > 1 {
-				var header struct {
-					Header struct {
-						ClusterID string `json:"cluster_id"`
-					} `json:"header"`
-				}
-				if json.Unmarshal(data, &header) != nil {
-					return ErrInvalid
-				}
-				cluster := header.Header.ClusterID
-				number, parseErr := strconv.ParseUint(cluster, 10, 64)
-				if parseErr != nil || number == 0 || (e.clusterID != "" && e.clusterID != cluster) {
-					return fmt.Errorf("etcd cluster identity missing or changed")
-				}
-				e.clusterID = cluster
+			// different cluster, including when only one endpoint is configured.
+			var header struct {
+				Header struct {
+					ClusterID string `json:"cluster_id"`
+				} `json:"header"`
 			}
+			if json.Unmarshal(data, &header) != nil {
+				return ErrInvalid
+			}
+			cluster := header.Header.ClusterID
+			number, parseErr := strconv.ParseUint(cluster, 10, 64)
+			if parseErr != nil || number == 0 || (e.clusterID != "" && e.clusterID != cluster) {
+				return fmt.Errorf("etcd cluster identity missing or changed")
+			}
+			e.clusterID = cluster
 			if err = json.Unmarshal(data, output); err != nil {
 				return err
 			}
@@ -218,7 +217,11 @@ func (e *etcdSnapshots) request(ctx context.Context, endpoint string, body []byt
 }
 
 func (e *etcdSnapshots) read(ctx context.Context) ([]byte, string, int, error) {
+	e.witness = ""
 	var result struct {
+		Header struct {
+			Revision string `json:"revision"`
+		} `json:"header"`
 		KVs []struct {
 			Key, Value  string
 			ModRevision string `json:"mod_revision"`
@@ -228,7 +231,12 @@ func (e *etcdSnapshots) read(ctx context.Context) ([]byte, string, int, error) {
 	if err != nil {
 		return nil, "", 0, err
 	}
+	n, err := strconv.ParseInt(result.Header.Revision, 10, 64)
+	if err != nil || n <= 0 {
+		return nil, "", 0, ErrInvalid
+	}
 	if len(result.KVs) == 0 {
+		e.witness = result.Header.Revision
 		return nil, "", http.StatusNoContent, nil
 	}
 	if len(result.KVs) != 1 {
@@ -240,7 +248,7 @@ func (e *etcdSnapshots) read(ctx context.Context) ([]byte, string, int, error) {
 		return nil, "", 0, ErrInvalid
 	}
 	revision, err := strconv.ParseInt(kv.ModRevision, 10, 64)
-	if err != nil || revision <= 0 {
+	if err != nil || revision <= 0 || revision > n {
 		return nil, "", 0, ErrInvalid
 	}
 	data, err := base64.StdEncoding.DecodeString(kv.Value)
@@ -250,9 +258,23 @@ func (e *etcdSnapshots) read(ctx context.Context) ([]byte, string, int, error) {
 	if len(data) > e.maxBytes {
 		return nil, "", 0, ErrCapacity
 	}
+	e.witness = result.Header.Revision
 	return data, kv.ModRevision, http.StatusOK, nil
 }
 func (e *etcdSnapshots) save(ctx context.Context, data []byte, etag string) (string, error) {
+	// A historical range in the same transaction is checked before any writes.
+	// Restore must bump past all source revisions and mark that history compacted.
+	// Unlike a response cluster-ID check, this rejects an in-flight old write.
+	if etag == "" {
+		if _, _, _, err := e.read(ctx); err != nil {
+			return "", err
+		}
+	}
+	if e.witness == "" {
+		return "", ErrConflict
+	}
+	witness := e.witness
+	e.witness = ""
 	revision := "0"
 	target := "CREATE"
 	field := "create_revision"
@@ -267,7 +289,13 @@ func (e *etcdSnapshots) save(ctx context.Context, data []byte, etag string) (str
 	}
 	key := base64.StdEncoding.EncodeToString([]byte(e.key))
 	compare := map[string]any{"key": key, "target": target, "result": "EQUAL", field: revision}
-	input := map[string]any{"compare": []any{compare}, "success": []any{map[string]any{"request_put": map[string]string{"key": key, "value": base64.StdEncoding.EncodeToString(data)}}}}
+	input := map[string]any{
+		"compare": []any{compare},
+		"success": []any{
+			map[string]any{"request_range": map[string]any{"key": key, "revision": witness, "count_only": true}},
+			map[string]any{"request_put": map[string]string{"key": key, "value": base64.StdEncoding.EncodeToString(data)}},
+		},
+	}
 	var result struct {
 		Header struct {
 			Revision string `json:"revision"`
@@ -284,5 +312,6 @@ func (e *etcdSnapshots) save(ctx context.Context, data []byte, etag string) (str
 	if !result.Succeeded {
 		return "", ErrConflict
 	}
+	e.witness = result.Header.Revision
 	return result.Header.Revision, nil
 }

@@ -16,7 +16,7 @@ import (
 func failoverRead(w http.ResponseWriter, r *http.Request, cluster, value, revision string) {
 	var request struct{ Key string }
 	json.NewDecoder(r.Body).Decode(&request)
-	json.NewEncoder(w).Encode(map[string]any{"header": map[string]string{"cluster_id": cluster}, "kvs": []any{map[string]string{"key": request.Key, "value": base64.StdEncoding.EncodeToString([]byte(value)), "mod_revision": revision}}})
+	json.NewEncoder(w).Encode(map[string]any{"header": map[string]string{"cluster_id": cluster, "revision": revision}, "kvs": []any{map[string]string{"key": request.Key, "value": base64.StdEncoding.EncodeToString([]byte(value)), "mod_revision": revision}}})
 }
 func multiBackend(t *testing.T, endpoints ...string) *FencedDaprBackend {
 	t.Helper()

@@ -60,7 +60,7 @@ shorter deadline). Each endpoint attempt is capped at five seconds divided by
 the endpoint count. The backend remembers
 a successful endpoint for later calls. Authentication/authorization errors,
 redirects, certificate verification errors and malformed responses fail closed.
-Multi-endpoint backends pin the cluster ID from their first successful response
+All etcd backends, including single-endpoint deployments, pin the cluster ID from their first successful response
 and reject subsequent responses from a different cluster. This is a per-backend
 check, not a substitute for verifying configuration before startup or restore.
 It runs after the response: a transaction may have committed before a changed
@@ -142,14 +142,30 @@ checksum rejection, three-member restore with revision bump and compaction,
 point-in-time actor state/receipts, and fresh-writer CAS fencing. It does not repoint
 surviving writers or qualify a production disaster-recovery cutover.
 
-A [guarded cutover rehearsal](device-dapr-integration.md#restore-cutover-and-stale-transactions)
-now demonstrates conditional per-key rewrites before admission opens, followed by
-fresh clients. Its negative control confirms that native restore can preserve a
-stale key ETag despite a global revision bump, and that a cluster-ID error can
-arrive after a transaction commits. The guard must cover the complete admitted
-inventory and advance each key beyond observed source versions. Old processes
-and credentials must still be retired: this guards buffered stale transactions,
-not old processes permitted to reload new versions.
+The [restore cutover tests](device-dapr-integration.md#restore-cutover-and-stale-transactions)
+verify an atomic historical revision guard, including a transaction held in flight
+while stable endpoint URLs switch to the restored cluster. Snapshot writes now
+include a count-only historical range at their last linearizable read's global
+revision in the same CAS transaction. etcd rejects a compacted witness before
+performing the put. Creates also acquire a read witness before their transaction.
+No write is automatically replayed, and errors invalidate the loaded version.
+
+This protects cutovers **without per-key rewrites** only when native restore bumps
+the global revision above every revision source clients could have observed and
+marks old history compacted. Stop source writers and determine that bound; a bump
+based only on the backup's revision is insufficient. Restore without those flags
+or with an insufficient bump remains unsupported. Conditional per-key rewrites
+remain an additional fence, particularly for older binaries. Cluster identity is
+pinned for single as well as multiple endpoints, so old backends cannot reload the
+replacement cluster. Fresh clients must be constructed after cutover. Inventory
+validation, credential retirement and external-effect reconciliation remain
+operator duties.
+
+Ordinary etcd compaction may reject an in-flight transaction whose read witness
+has expired. Reloading obtains a current global revision even for an unchanged old
+key; callers can then retry their stable request ID. This trades availability
+under aggressive compaction for failing closed. No additional etcd keys, leases,
+or Dapr state changes are introduced, and legacy remains the default.
 
 ## Tests and scope
 

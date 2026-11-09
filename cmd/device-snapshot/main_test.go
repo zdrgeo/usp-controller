@@ -26,7 +26,7 @@ func TestRestoreRequiresExplicitLiveVersion(t *testing.T) {
 			}
 			var req map[string]string
 			json.NewDecoder(r.Body).Decode(&req)
-			json.NewEncoder(w).Encode(map[string]any{"kvs": []any{map[string]string{"key": req["key"], "value": base64.StdEncoding.EncodeToString([]byte(snapshot)), "mod_revision": tag}}})
+			json.NewEncoder(w).Encode(map[string]any{"header": map[string]string{"cluster_id": "11", "revision": tag}, "kvs": []any{map[string]string{"key": req["key"], "value": base64.StdEncoding.EncodeToString([]byte(snapshot)), "mod_revision": tag}}})
 			return
 		}
 		var req struct {
@@ -37,16 +37,16 @@ func TestRestoreRequiresExplicitLiveVersion(t *testing.T) {
 				Put struct{ Value string } `json:"request_put"`
 			}
 		}
-		if e := json.NewDecoder(r.Body).Decode(&req); e != nil || len(req.Compare) != 1 || req.Compare[0].Revision != "7" {
+		if e := json.NewDecoder(r.Body).Decode(&req); e != nil || len(req.Success) != 2 || len(req.Compare) != 1 || req.Compare[0].Revision != "7" {
 			t.Fatal("wrong live revision")
 		}
-		data, e := base64.StdEncoding.DecodeString(req.Success[0].Put.Value)
+		data, e := base64.StdEncoding.DecodeString(req.Success[1].Put.Value)
 		if e != nil {
 			t.Error(e)
 		}
 		snapshot = string(data)
 		written = true
-		io.WriteString(w, `{"header":{"revision":"8"},"succeeded":true}`)
+		io.WriteString(w, `{"header":{"cluster_id":"11","revision":"8"},"succeeded":true}`)
 	}))
 	defer server.Close()
 	args := []string{"-action", "restore", "-tenant", "t", "-controller", "c", "-device", "d", "-etcd-prefix", "/test/", "-etcd-url", server.URL}
@@ -70,7 +70,7 @@ func TestInspectRepeatedEtcdEndpoints(t *testing.T) {
 	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct{ Key string }
 		json.NewDecoder(r.Body).Decode(&req)
-		json.NewEncoder(w).Encode(map[string]any{"header": map[string]string{"cluster_id": "11"}, "kvs": []any{map[string]string{"key": req.Key, "value": base64.StdEncoding.EncodeToString([]byte(snapshot)), "mod_revision": "8"}}})
+		json.NewEncoder(w).Encode(map[string]any{"header": map[string]string{"cluster_id": "11", "revision": "8"}, "kvs": []any{map[string]string{"key": req.Key, "value": base64.StdEncoding.EncodeToString([]byte(snapshot)), "mod_revision": "8"}}})
 	}))
 	defer second.Close()
 	var output bytes.Buffer

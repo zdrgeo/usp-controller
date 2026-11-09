@@ -540,45 +540,50 @@ inventory, stable gateway proxies, and two disposable native restores of the sam
 backup. The test actors have no reminders, publishers or device transport. The
 source advances after backup, providing both pre-backup and post-backup writers.
 
-The **unguarded negative control** shows why a response error is insufficient.
-Native restore preserves the key's modification revision even when the global
-revision is bumped and history compacted. A pre-backup writer can therefore commit
-through an unchanged gateway URL to the restored key. The multi-endpoint client
-then rejects the response's changed cluster ID, but an independent read confirms
-that its write already committed. This is a regression test of an unsupported
-cutover, not a supported runtime guarantee.
+The **cutover without per-key rewrites** now verifies an atomic runtime guard.
+Native restore preserves key modification revisions, so a CAS alone is insufficient.
+Each write includes a historical count-only range at the global revision observed
+by its preceding linearizable read, in the same transaction as the conditional
+put. etcd checks that historical revision before applying any writes. A restore
+with `--bump-revision` above every source revision and `--mark-compacted` rejects
+the old witness even when the key CAS would succeed.
 
-The **guarded cutover** keeps admission closed and uses the existing
-`ExportSnapshot` / `RestoreSnapshot` administrative API to conditionally rewrite
-the restored application snapshot against its freshly inspected target ETag.
-Before opening the new authority, the resulting per-key modification revision
-must exceed the observed source versions. The test's complete admitted inventory
-is one explicit device; a real cohort must cover every admitted key and keep
-admission closed if any key is missing or any rewrite fails.
+The test holds a pre-backup transaction before network dispatch, switches the
+stable endpoint URLs to the restored cluster, then releases it. It requires a
+server rejection and independently verifies unchanged snapshot bytes and ETag.
+It also rejects a cached single-endpoint writer without a per-key rewrite. Both
+single- and multi-endpoint backends pin cluster identity, preventing an old
+backend from reloading the replacement cluster. A fresh backend can immediately
+write the restored snapshot; no metadata initialization or per-key rewrite is
+needed for the historical guard.
 
-A transaction is held before network dispatch, while it still carries a
-pre-backup version. The stable proxy URLs are switched and the transaction is
-released into the restored cluster. The test inspects etcd's transaction response
-to require `succeeded=false`, then independently verifies that both bytes and ETag
-are unchanged. It repeats those state audits for pre- and post-backup
-single-endpoint writers and a post-backup multi-endpoint writer. Historical
-restore authorization is rejected, and an old cluster-pinned backend cannot load
-the replacement cluster. Fresh clients recover the backup twin and receipt,
-admit one new request idempotently, and retain ordinary CAS fencing. The retired
-source state remains unchanged.
+The **guarded cutover** retains the additional conditional per-key rewrite using
+`ExportSnapshot` / `RestoreSnapshot` before admission. It checks pre/post-backup
+writers and a delayed transaction, rejects historical restore authorization,
+recovers the twin and receipt with fresh clients, and admits a new request
+idempotently. The source remains unchanged. The test actors have no device
+transport, event publisher or active reminders.
 
-This qualifies a guarded offline cutover rehearsal using existing APIs, not an
-automated production cutover. Retire old processes and revoke their access before
-reopening admission; rewriting ETags fences buffered stale transactions, not an
-old process that is allowed to load a new version. In particular, single-endpoint
-clients do not pin cluster identity. Cluster-ID response checks and revision bumps
-are not atomic write fences. Source and restored authority access, complete
-inventory validation, and external-effect reconciliation remain operator duties.
-Legacy remains the default; no production code or configuration is changed.
+This is not an automated production cutover. The atomic guard requires a revision
+bump strictly above **all** revisions that source writers could have observed,
+including after backup, and compacted old history. Restores without those
+conditions remain unsupported; cluster-ID response checks alone cannot prevent a
+write. Stop source writers, establish the revision bound, retire old processes and
+credentials, validate the complete restored inventory, and reconcile external
+effects before reopening admission. Older binaries without the historical guard
+still require the per-key rewrite fence and retirement. Ordinary compaction can
+reject an in-flight write too: reload and retry the stable request ID, never replay
+the old transaction. Legacy remains the default.
+
+The atomicity assumption is verified against pinned
+[etcd v3.5.17 transaction validation](https://github.com/etcd-io/etcd/blob/v3.5.17/server/etcdserver/apply.go):
+`Txn` checks range requests before opening the mutable transaction, and
+`checkRequestRange` rejects compacted historical revisions.
 
 Validated on 2026-11-09: `go test -race ./...`, `go vet ./...`, and the complete
 `USP_TEST_DAPR=1 go test -race -count=1 -v -timeout=15m ./internal/integration`
-suite passed. The full live run completed in 649.106 seconds, including both the
-unguarded negative control and guarded restore cutover, plus all existing backup,
-restart, packet-loss, quorum and fencing checks. The focused native restore and
-cutover run also passed.
+suite passed (637.803 seconds). The focused native backup/restore and cutover
+suite was rerun with the final assertion checking etcd's compacted-history error.
+Unit tests also verify the transaction's historical range, create-only witness,
+failed-version invalidation, and recovery after ordinary compaction by reloading
+the global revision while the key revision remains unchanged.
