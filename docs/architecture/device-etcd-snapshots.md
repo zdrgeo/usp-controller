@@ -241,3 +241,10 @@ backup/restore rehearsal above does not qualify a production cutover.
 References: [etcd API guarantees](https://etcd.io/docs/v3.5/learning/api_guarantees/),
 [etcd JSON gateway](https://etcd.io/docs/v3.5/dev-guide/api_grpc_gateway/),
 [pinned Dapr etcd implementation](https://github.com/dapr/components-contrib/blob/v1.19.0/state/etcd/etcd.go).
+
+The [live compaction recovery cases](device-dapr-integration.md#live-etcd-compaction-and-recovery)
+exercise both logical and physical compaction with one and three configured
+endpoints. They hold a command transaction across compaction, verify an explicit
+compacted-history rejection and unchanged snapshot bytes/ETag, then recover through
+a fresh read on the same actor and backend. Stable request retries retain one
+receipt without another write. No production defaults are changed.

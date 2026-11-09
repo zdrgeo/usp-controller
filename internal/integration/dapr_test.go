@@ -339,6 +339,9 @@ func TestLiveDapr(t *testing.T) {
 	if !t.Run("etcd snapshot backup restore", func(t *testing.T) { testEtcdSnapshotBackupRestore(t, hosts, members[0], autoID) }) {
 		return
 	}
+	if !t.Run("etcd compaction recovery", func(t *testing.T) { testEtcdCompaction(t, members, autoID) }) {
+		return
+	}
 	if !t.Run("etcd restore cutover", func(t *testing.T) { testEtcdRestoreCutover(t, members[0], autoID) }) {
 		return
 	}

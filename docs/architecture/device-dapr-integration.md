@@ -587,3 +587,39 @@ suite was rerun with the final assertion checking etcd's compacted-history error
 Unit tests also verify the transaction's historical range, create-only witness,
 failed-version invalidation, and recovery after ordinary compaction by reloading
 the global revision while the key revision remains unchanged.
+
+## Live etcd compaction and recovery
+
+`etcd compaction recovery` runs logical and physical (`etcdctl compact --physical`)
+compaction against the live three-member etcd 3.5.17 fixture, with both one and
+three configured endpoints. Each case uses a dedicated device outside the Dapr
+inventory, an offline actor and a no-op reminder adapter. It creates no device
+transport or event publisher.
+
+The test holds the actor's first command transaction after its snapshot read,
+advances an unrelated key, and compacts at that newer global revision. The device
+key's modification revision remains unchanged, so its CAS alone would still
+succeed. The released transaction must receive etcd's explicit compacted-history
+error, with exactly one transaction attempt. Independent reads verify that both
+snapshot bytes (including receipts) and ETag are unchanged. A second cached writer
+is also rejected, and its invalidated version cannot be reused.
+
+The same actor and backend then reload and retry the same request ID. They must
+commit revision 2, and a subsequent duplicate must return the stored receipt
+without another transaction or ETag change. A fresh actor verifies the recovered
+twin and the original baseline receipt. This demonstrates that ordinary
+compaction can temporarily reject an in-flight write without preventing an
+unchanged old key from being updated after a fresh global-revision read.
+
+These cases qualify explicit manual compaction and application recovery; they do
+not simulate automatic retention timing, defragmentation, disk exhaustion or
+packet loss during compaction. Existing tests cover network faults separately.
+Production code and configuration are unchanged; legacy remains the default.
+
+Focused validation on 2026-11-09: all four cases passed with the race detector;
+the focused live run completed in 19.939 seconds.
+
+Full validation on 2026-11-09: `go test -race ./...`, `go vet ./...`, and
+`USP_TEST_DAPR=1 go test -race -count=1 -v -timeout=15m ./internal/integration`
+passed. The full live suite completed in 641.986 seconds, including all four
+compaction cases and existing partition, restart, backup and restore checks.
