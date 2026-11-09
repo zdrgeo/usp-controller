@@ -13,7 +13,8 @@ import (
 
 type etcdStatus struct {
 	Header struct {
-		MemberID uint64 `json:"member_id"`
+		MemberID  uint64 `json:"member_id"`
+		ClusterID uint64 `json:"cluster_id"`
 	} `json:"header"`
 	Leader uint64 `json:"leader"`
 	Term   uint64 `json:"raftTerm"`

@@ -461,3 +461,35 @@ Validated on 2026-11-09: `go test -race ./...`, `go vet ./...`, and the complete
 suite passed. The full live suite completed in 577.264 seconds, including all
 three rolling member restarts and the existing packet-loss, quorum, restore and
 fencing checks. The focused rolling-restart run also passed.
+
+## Etcd full-cluster restart and recovery
+
+`etcd full-cluster restart` runs graceful-stop and abrupt SIGKILL scenarios against
+all three members. It retains the original containers, membership and data
+directories; it does not restore a backup or force a new cluster. Every member must
+be confirmed stopped. Preloaded snapshot CAS, bounded snapshot reads, and actor
+reads/writes on both Dapr routes must reject the outage. Restarting only member
+zero must still reject reads and actor admission without a majority.
+
+Restarting a second original member must restore the existing reader and both
+actor routes. Before admitting a new desired-state change, the test inspects the
+committed twin and requires a CAS conflict for a version made obsolete **before**
+the outage. A writer whose outage transaction failed cannot reuse its invalidated
+version. The outage command probe intentionally has an obsolete expected revision,
+so a delayed turn cannot advance the fence after quorum returns and mask recovery
+of an obsolete version.
+
+The third member then rejoins. Every gateway must serve snapshot reads, each
+member ID and cluster ID must match their pre-outage values, and every pre-outage
+and recovery receipt must replay unchanged on both actor routes. The exact final
+twin must remain intact. Process start timestamps prove actual restarts. As with
+the rolling drill, only Docker's mapping to each same restarted member is refreshed;
+actor endpoint lists and backend instances stay fixed. Legacy remains the default.
+This is same-version, single-machine restart qualification with offline device
+transport, not backup restoration or disaster recovery from lost data directories.
+
+Validated on 2026-11-09: `go test -race ./...`, `go vet ./...`, and the complete
+`USP_TEST_DAPR=1 go test -race -count=1 -v -timeout=15m ./internal/integration`
+suite passed. The full live run completed in 643.766 seconds, including graceful
+and abrupt full-cluster recovery plus the existing rolling restart, packet-loss,
+quorum, restore and fencing checks. Both new cases also passed in a focused run.
