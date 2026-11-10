@@ -68,7 +68,7 @@ func (a *Actor) ListCommands(ctx context.Context, q device.CommandQuery) (device
 			at := c.AttemptedAt
 			attemptedAt = &at
 		}
-		commands = append(commands, device.CommandSummary{AttemptedAt: attemptedAt, AttemptSequence: c.AttemptSequence, RequestID: id, Revision: c.Receipt.Revision, State: c.Receipt.State, Deadline: c.Deadline, ObservationRevision: c.ObservationRevision, DesiredRevision: c.DesiredRevision, QueuePosition: positions[id], BlockingUnknown: blocksUnknown(c), UnknownAcknowledged: c.UnknownAcknowledgement != nil, HasResponse: len(c.Result) > 0, HasCompletion: len(c.Completion) > 0})
+		commands = append(commands, device.CommandSummary{AttemptedAt: attemptedAt, AttemptSequence: c.AttemptSequence, RequestID: id, Revision: c.Receipt.Revision, State: c.Receipt.State, Deadline: c.Deadline, VerificationRevision: c.VerificationRevision, ObservationRevision: c.ObservationRevision, DesiredRevision: c.DesiredRevision, QueuePosition: positions[id], BlockingUnknown: blocksUnknown(c), UnknownAcknowledged: c.UnknownAcknowledgement != nil, HasResponse: len(c.Result) > 0, HasCompletion: len(c.Completion) > 0})
 	}
 	sort.Slice(commands, func(i, j int) bool { return commands[i].RequestID < commands[j].RequestID })
 	// Include all command metadata and the visible control revision, not just the

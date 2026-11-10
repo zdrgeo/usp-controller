@@ -624,3 +624,13 @@ It shares dispatch safety gates and rechecks queued intent against policy and
 desired state. Reads are not retried automatically, and Set responses do not
 verify convergence. Schema 7 preserves generated-read provenance while rejecting
 older writers; legacy remains the default.
+
+
+### Bounded post-write verification implementation
+
+An independent opt-in [verification read planner](device-verification-reads.md)
+can queue one Get per desired revision after a successful managed Set. Correlated
+read observations can establish convergence; mismatches and uncertainty do not
+retry writes or reads. Queued work rechecks policy, desired revision and remaining
+need under the existing execution gates. Schema 8 preserves its distinct
+provenance and rejects older writers. Legacy remains the default.

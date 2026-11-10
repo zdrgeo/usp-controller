@@ -23,6 +23,14 @@ func (a *Actor) observedValue(path, value string) device.ParameterValue {
 func (a *Actor) managedObservation(path, value string) bool {
 	return a.opts.Policy == nil || a.opts.Policy.Allows(path, a.observedValue(path, value), false)
 }
+
+// Both maintenance and the final pre-attempt check use the same provenance gates.
+func (a *Actor) currentGeneratedCommand(s *snapshot, c storedCommand) bool {
+	return (c.DesiredRevision == 0 || a.currentReconciliation(s, c)) &&
+		(c.ObservationRevision == 0 || a.currentObservation(s, c)) &&
+		(c.VerificationRevision == 0 || a.currentVerification(s, c))
+}
+
 func (a *Actor) currentReconciliation(s *snapshot, c storedCommand) bool {
 	if a.opts.Policy == nil || !a.opts.Policy.Reconcile || c.DesiredRevision != s.DesiredRevision {
 		return false
@@ -116,10 +124,14 @@ func (a *Actor) planReconciliation(s *snapshot) (*usp.Request, string) {
 }
 func (a *Actor) scheduleReconciliation(ctx context.Context, s *snapshot) error {
 	req, reason := a.planReconciliation(s)
-	observation := false
+	observation, verification := false, false
 	if req == nil && reason == "waiting_observation" {
 		req, _ = a.planObservation(s)
 		observation = req != nil
+	}
+	if req == nil && reason == "attempt_recorded" {
+		req, _ = a.planVerification(s)
+		verification = req != nil
 	}
 	if req == nil {
 		return nil
@@ -127,6 +139,9 @@ func (a *Actor) scheduleReconciliation(ctx context.Context, s *snapshot) error {
 	id := device.RequestID(fmt.Sprintf("reconcile-%d", s.DesiredRevision))
 	if observation {
 		id = device.RequestID(fmt.Sprintf("reconcile-observe-%d", s.DesiredRevision))
+	}
+	if verification {
+		id = device.RequestID(fmt.Sprintf("reconcile-verify-%d", s.DesiredRevision))
 	}
 	if _, exists := s.Receipts[id]; exists {
 		return ErrConflict
@@ -147,6 +162,10 @@ func (a *Actor) scheduleReconciliation(ctx context.Context, s *snapshot) error {
 	if observation {
 		c.DesiredRevision = 0
 		c.ObservationRevision = s.DesiredRevision
+	}
+	if verification {
+		c.DesiredRevision = 0
+		c.VerificationRevision = s.DesiredRevision
 	}
 	s.Commands[id] = c
 	s.Receipts[id] = receipt{Kind: "command", Fingerprint: fp, Revision: 1}
@@ -188,6 +207,9 @@ func (a *Actor) GetStatus(ctx context.Context) (Status, error) {
 	_, reason := a.planReconciliation(s)
 	if reason == "waiting_observation" {
 		_, reason = a.planObservation(s)
+	}
+	if reason == "attempt_recorded" {
+		_, reason = a.planVerification(s)
 	}
 	b, err := json.Marshal(s)
 	if err != nil {

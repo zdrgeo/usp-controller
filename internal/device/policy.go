@@ -10,6 +10,7 @@ import (
 // Only reviewed nonsensitive concrete paths should be listed. Reconcile is off
 // by default; Writable must additionally be true for each desired-state path.
 type TwinPolicy struct {
+	VerifyAfterReconcile  bool                   `json:"verify_after_reconcile,omitempty"`
 	ReadBeforeReconcile   bool                   `json:"read_before_reconcile,omitempty"`
 	ObserveGetResponses   bool                   `json:"observe_get_responses,omitempty"`
 	SiteID                string                 `json:"site_id"`
@@ -26,8 +27,8 @@ var parameterPath = regexp.MustCompile(`^Device\.(?:[A-Za-z0-9_]+\.)*[A-Za-z_][A
 var siteName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 
 func (p TwinPolicy) Validate() error {
-	if p.ReadBeforeReconcile && (!p.Reconcile || !p.ObserveGetResponses) {
-		return fmt.Errorf("read_before_reconcile requires reconciliation and Get observation projection")
+	if (p.ReadBeforeReconcile || p.VerifyAfterReconcile) && (!p.Reconcile || !p.ObserveGetResponses) {
+		return fmt.Errorf("automatic reconciliation reads require reconciliation and Get observation projection")
 	}
 	if !siteName.MatchString(p.SiteID) || len(p.Paths) == 0 || len(p.Paths) > 1024 || p.CommandTimeoutSeconds < 1 || p.CommandTimeoutSeconds > 300 {
 		return fmt.Errorf("twin requires a site ID, 1–1024 concrete paths and timeout 1–300 seconds")

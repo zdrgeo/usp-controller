@@ -7,7 +7,7 @@ func TestTwinPolicyTypesAndConcretePaths(t *testing.T) {
 	if err := p.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	p.ReadBeforeReconcile = true
+	p.VerifyAfterReconcile = true
 	if p.Validate() == nil {
 		t.Fatal("read planning without observation projection/reconciliation")
 	}

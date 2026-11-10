@@ -35,15 +35,17 @@ may plan the managed Set, and only if every desired path now has eligible fresh
 observations. Partial or unusable reads leave the actor waiting for evidence;
 `observation_recorded` distinguishes an exhausted bootstrap opportunity from
 `observation_eligible`. A Set response does not verify convergence. This feature
-provides an initial observation opportunity, not continuous refresh or automatic
-post-write verification.
+provides an initial observation opportunity.
+[Post-write verification](device-verification-reads.md) is a separate opt-in read;
+neither feature continuously refreshes state.
 
 ## Storage and validation
 
-Current writers use schema 7. Schemas 1–6 upgrade on the next save while preserving
+Bootstrap provenance introduced schema 7; current writers use
+[schema 8](device-verification-reads.md). Schemas 1–7 upgrade on the next save while preserving
 their state; generated-read provenance is never invented. The loader checks its
 schema, revision, reserved identity, Get payload and separation from write
-provenance. Older binaries reject schema 7, preventing dispatch with older policy
+provenance. Older binaries reject schema 8, preventing dispatch with older policy
 semantics. Drain senders and roll forward or use a reviewed state migration;
 clearing snapshots is not a rollback procedure. This applies to actor saves even
 when automatic reads are disabled. Storage fencing and backend protocols are

@@ -150,9 +150,9 @@ Global site routing and value redaction remain future work. A fleet projection
 must be explicitly eventually consistent and must never claim to be the actor's
 current authoritative state.
 
-New saves use snapshot schema **7**, preserving schema 1/2/3/4/5/6 state on upgrade,
+New saves use snapshot schema **8**, preserving schema 1/2/3/4/5/6/7 state on upgrade,
 recording generated command provenance, audited operator acknowledgement of
-unknown outcomes and durable per-device execution control. See the [operator workflow](device-actor-canary.md#operator-acknowledgement-of-an-unknown-outcome). See [Get observations](device-get-observations.md) for durable attempt provenance and opt-in reported-twin updates. [Bounded observation reads](device-observation-reads.md) are separately opt-in. Older binaries reject schema 7; binary
+unknown outcomes and durable per-device execution control. See the [operator workflow](device-actor-canary.md#operator-acknowledgement-of-an-unknown-outcome). See [Get observations](device-get-observations.md) for durable attempt provenance and opt-in reported-twin updates. [Bounded observation reads](device-observation-reads.md) are separately opt-in. [Post-write verification reads](device-verification-reads.md) are also separately opt-in. Older binaries reject schema 8; binary
 rollback over upgraded state is unsupported. Drain senders and use a reviewed
 state migration or roll forward. Merely clearing state can lose attempts and
 receipts and is not a rollback procedure. Existing bounded retention limitations

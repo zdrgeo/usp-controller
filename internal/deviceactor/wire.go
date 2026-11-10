@@ -28,6 +28,7 @@ type CommandOutput struct {
 	AttemptedAt            *time.Time                     `json:"attempted_at,omitempty"`
 	AttemptSequence        uint64                         `json:"attempt_sequence,omitempty"`
 	UnknownAcknowledgement *device.UnknownAcknowledgement `json:"unknown_acknowledgement,omitempty"`
+	VerificationRevision   uint64                         `json:"verification_revision,omitempty"`
 	ObservationRevision    uint64                         `json:"observation_revision,omitempty"`
 	DesiredRevision        uint64                         `json:"desired_revision,omitempty"`
 	RequestID              device.RequestID               `json:"request_id"`
@@ -43,7 +44,7 @@ type CommandOutput struct {
 }
 
 func commandOutput(c device.DeviceCommand) (CommandOutput, error) {
-	out := CommandOutput{AttemptSequence: c.AttemptSequence, UnknownAcknowledgement: c.UnknownAcknowledgement, ObservationRevision: c.ObservationRevision, DesiredRevision: c.DesiredRevision, RequestID: c.ID, Revision: c.Revision, State: c.State, Deadline: &c.Deadline, MessageID: c.MessageID, Reason: c.Reason, OperationKey: c.OperationKey}
+	out := CommandOutput{AttemptSequence: c.AttemptSequence, UnknownAcknowledgement: c.UnknownAcknowledgement, VerificationRevision: c.VerificationRevision, ObservationRevision: c.ObservationRevision, DesiredRevision: c.DesiredRevision, RequestID: c.ID, Revision: c.Revision, State: c.State, Deadline: &c.Deadline, MessageID: c.MessageID, Reason: c.Reason, OperationKey: c.OperationKey}
 	if !c.AttemptedAt.IsZero() {
 		at := c.AttemptedAt
 		out.AttemptedAt = &at

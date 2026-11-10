@@ -43,7 +43,10 @@ single-command reads. Migrated attempts omit these fields when provenance is
 unknown. These fields participate in the command-view fingerprint. See
 [Get observations](device-get-observations.md) for attempt timing semantics. Generated bootstrap reads expose
 `observation_revision`, distinct from generated writes' `desired_revision`; see
-[observation reads](device-observation-reads.md) for schema 7 and rollout.
+[observation reads](device-observation-reads.md). Generated post-write reads expose
+`verification_revision`; see [verification reads](device-verification-reads.md)
+for schema 8 and rollout. These provenance fields also participate in the view
+fingerprint.
 
 Summaries omit USP request/result/completion payloads, protocol message IDs,
 operation keys, free-form reasons and acknowledgement audit text. Request IDs are
