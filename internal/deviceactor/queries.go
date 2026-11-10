@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"sort"
+	"time"
 
 	"example.com/usp-controller/internal/device"
 )
@@ -62,7 +63,12 @@ func (a *Actor) ListCommands(ctx context.Context, q device.CommandQuery) (device
 	}
 	commands := make([]device.CommandSummary, 0, len(s.Commands))
 	for id, c := range s.Commands {
-		commands = append(commands, device.CommandSummary{RequestID: id, Revision: c.Receipt.Revision, State: c.Receipt.State, Deadline: c.Deadline, DesiredRevision: c.DesiredRevision, QueuePosition: positions[id], BlockingUnknown: blocksUnknown(c), UnknownAcknowledged: c.UnknownAcknowledgement != nil, HasResponse: len(c.Result) > 0, HasCompletion: len(c.Completion) > 0})
+		var attemptedAt *time.Time
+		if !c.AttemptedAt.IsZero() {
+			at := c.AttemptedAt
+			attemptedAt = &at
+		}
+		commands = append(commands, device.CommandSummary{AttemptedAt: attemptedAt, AttemptSequence: c.AttemptSequence, RequestID: id, Revision: c.Receipt.Revision, State: c.Receipt.State, Deadline: c.Deadline, DesiredRevision: c.DesiredRevision, QueuePosition: positions[id], BlockingUnknown: blocksUnknown(c), UnknownAcknowledged: c.UnknownAcknowledgement != nil, HasResponse: len(c.Result) > 0, HasCompletion: len(c.Completion) > 0})
 	}
 	sort.Slice(commands, func(i, j int) bool { return commands[i].RequestID < commands[j].RequestID })
 	// Include all command metadata and the visible control revision, not just the

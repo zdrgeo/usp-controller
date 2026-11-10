@@ -10,6 +10,7 @@ import (
 // Only reviewed nonsensitive concrete paths should be listed. Reconcile is off
 // by default; Writable must additionally be true for each desired-state path.
 type TwinPolicy struct {
+	ObserveGetResponses   bool                   `json:"observe_get_responses,omitempty"`
 	SiteID                string                 `json:"site_id"`
 	Reconcile             bool                   `json:"reconcile"`
 	CommandTimeoutSeconds int                    `json:"command_timeout_seconds"`

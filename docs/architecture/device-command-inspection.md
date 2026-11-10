@@ -38,6 +38,11 @@ Queue positions refer to the persisted FIFO across all queued commands, not thei
 lexical page order or a filtered subqueue. Nonqueued entries omit queue position.
 An empty result is `commands:[]` and `total:0`.
 
+New attempts also expose `attempted_at` and `attempt_sequence` in summaries and
+single-command reads. Migrated attempts omit these fields when provenance is
+unknown. These fields participate in the command-view fingerprint. See
+[Get observations](device-get-observations.md) for schema 6 and timing semantics.
+
 Summaries omit USP request/result/completion payloads, protocol message IDs,
 operation keys, free-form reasons and acknowledgement audit text. Request IDs are
 included so an authorized operator can use the existing single-command endpoint

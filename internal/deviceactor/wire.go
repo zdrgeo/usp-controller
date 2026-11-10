@@ -25,6 +25,8 @@ func (in CommandInput) Domain() (device.CommandRequest, error) {
 }
 
 type CommandOutput struct {
+	AttemptedAt            *time.Time                     `json:"attempted_at,omitempty"`
+	AttemptSequence        uint64                         `json:"attempt_sequence,omitempty"`
 	UnknownAcknowledgement *device.UnknownAcknowledgement `json:"unknown_acknowledgement,omitempty"`
 	DesiredRevision        uint64                         `json:"desired_revision,omitempty"`
 	RequestID              device.RequestID               `json:"request_id"`
@@ -40,7 +42,11 @@ type CommandOutput struct {
 }
 
 func commandOutput(c device.DeviceCommand) (CommandOutput, error) {
-	out := CommandOutput{UnknownAcknowledgement: c.UnknownAcknowledgement, DesiredRevision: c.DesiredRevision, RequestID: c.ID, Revision: c.Revision, State: c.State, Deadline: &c.Deadline, MessageID: c.MessageID, Reason: c.Reason, OperationKey: c.OperationKey}
+	out := CommandOutput{AttemptSequence: c.AttemptSequence, UnknownAcknowledgement: c.UnknownAcknowledgement, DesiredRevision: c.DesiredRevision, RequestID: c.ID, Revision: c.Revision, State: c.State, Deadline: &c.Deadline, MessageID: c.MessageID, Reason: c.Reason, OperationKey: c.OperationKey}
+	if !c.AttemptedAt.IsZero() {
+		at := c.AttemptedAt
+		out.AttemptedAt = &at
+	}
 	var err error
 	if c.Request != nil {
 		out.Request, err = protojson.Marshal(c.Request)

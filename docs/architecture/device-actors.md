@@ -604,3 +604,13 @@ releases permits on all exit paths. Passive local metrics expose occupancy and
 denials without actor fanout. This adds no shared command claiming, distributed
 lease or retry policy. Site-wide rate/fairness budgets remain separate work;
 legacy remains the default and schema 5 is unchanged.
+
+
+### Correlated Get observations and durable attempt provenance
+
+The next implementation slice adds opt-in [Get response projection](device-get-observations.md)
+into managed reported state. New attempts persist their start time and per-device
+sequence with the begin commit. Schema 6 preserves older snapshots without
+inventing provenance. Projection requires reviewed paths, valid values, the latest
+attempt and a fresh read window; command evidence and optional twin updates share
+one commit. Legacy remains the default and projection remains disabled by default.

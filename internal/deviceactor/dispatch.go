@@ -29,7 +29,7 @@ func NewExecuting(id device.DeviceIdentity, b Backend, o Options, t device.Devic
 	return a, nil
 }
 func commandView(c storedCommand, req *usp.Request) (device.DeviceCommand, error) {
-	out := device.DeviceCommand{UnknownAcknowledgement: c.UnknownAcknowledgement, DesiredRevision: c.DesiredRevision, CommandReceipt: c.Receipt, Request: req, Deadline: c.Deadline, Reason: c.Reason, MessageID: c.MessageID, AttemptID: c.MessageID, OperationKey: c.OperationKey}
+	out := device.DeviceCommand{AttemptedAt: c.AttemptedAt, AttemptSequence: c.AttemptSequence, UnknownAcknowledgement: c.UnknownAcknowledgement, DesiredRevision: c.DesiredRevision, CommandReceipt: c.Receipt, Request: req, Deadline: c.Deadline, Reason: c.Reason, MessageID: c.MessageID, AttemptID: c.MessageID, OperationKey: c.OperationKey}
 	if len(c.Result) > 0 {
 		out.Result = new(usp.Msg)
 		if err := proto.Unmarshal(c.Result, out.Result); err != nil {
@@ -155,6 +155,18 @@ func (a *Actor) Tick(ctx context.Context) error {
 		} // Leave intent queued; a later reminder can try again.
 		defer release() // Includes begin/result commits, errors and panics.
 	}
+	attemptedAt := a.opts.Now().UTC()
+	if !attemptedAt.Before(c.Deadline) {
+		if err := transition(&c, device.CommandExpired, "deadline reached before beginning attempt"); err != nil {
+			return err
+		}
+		s.Commands[id] = c
+		a.compactQueue(s)
+		return a.save(ctx, s)
+	}
+	if s.AttemptSequence == math.MaxUint64 {
+		return ErrCapacity
+	}
 	random := make([]byte, 16)
 	if _, err = rand.Read(random); err != nil {
 		return err
@@ -170,6 +182,9 @@ func (a *Actor) Tick(ctx context.Context) error {
 	if _, err = protocol.Encode(a.id.ControllerID, a.id.AgentID, msg); err != nil {
 		return err
 	}
+	s.AttemptSequence++
+	c.AttemptSequence = s.AttemptSequence
+	c.AttemptedAt = attemptedAt
 	if err = transition(&c, device.CommandAttempting, ""); err != nil {
 		return err
 	}
@@ -279,7 +294,7 @@ func (a *Actor) HandleResponse(ctx context.Context, r device.DeviceResponse) err
 		}
 		c.Result = payload
 		s.Commands[id] = c
-		return a.save(ctx, s)
+		return a.saveGetResponse(ctx, s, c, req, r)
 	}
 	return ErrNotFound
 }

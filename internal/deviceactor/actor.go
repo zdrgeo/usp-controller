@@ -89,6 +89,8 @@ type receipt struct {
 	Revision          uint64
 }
 type storedCommand struct {
+	AttemptedAt            time.Time
+	AttemptSequence        uint64
 	UnknownAcknowledgement *device.UnknownAcknowledgement `json:",omitempty"`
 	DesiredRevision        uint64
 	Receipt                device.CommandReceipt
@@ -101,6 +103,7 @@ type storedCommand struct {
 	Completion             []byte
 }
 type snapshot struct {
+	AttemptSequence                   uint64
 	Execution                         *device.ExecutionState
 	Schema                            int
 	Identity                          device.DeviceIdentity
@@ -121,7 +124,7 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &snapshot{Schema: 5, Execution: &device.ExecutionState{}, Identity: a.id, Desired: map[string]device.ParameterValue{}, Reported: map[string]device.Observation{}, Receipts: map[device.RequestID]receipt{}, Commands: map[device.RequestID]storedCommand{}}
+	s := &snapshot{Schema: 6, Execution: &device.ExecutionState{}, Identity: a.id, Desired: map[string]device.ParameterValue{}, Reported: map[string]device.Observation{}, Receipts: map[device.RequestID]receipt{}, Commands: map[device.RequestID]storedCommand{}}
 	s.Inbox = map[string]string{}
 	if len(b) == 0 {
 		return s, nil
@@ -133,7 +136,7 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 	if err = json.Unmarshal(b, s); err != nil {
 		return nil, fmt.Errorf("decode actor state: %w", err)
 	}
-	if (s.Schema >= 2 && s.Inbox == nil) || (s.Schema != 1 && s.Schema != 2 && s.Schema != 3 && s.Schema != 4 && s.Schema != 5) || s.Identity != a.id || s.Desired == nil || s.Reported == nil || s.Receipts == nil || s.Commands == nil {
+	if (s.Schema >= 2 && s.Inbox == nil) || (s.Schema != 1 && s.Schema != 2 && s.Schema != 3 && s.Schema != 4 && s.Schema != 5 && s.Schema != 6) || s.Identity != a.id || s.Desired == nil || s.Reported == nil || s.Receipts == nil || s.Commands == nil {
 		return nil, fmt.Errorf("unsupported or inconsistent actor state")
 	}
 	if len(s.Receipts) > a.opts.MaxReceipts || len(s.Commands) > a.opts.MaxCommands || len(s.Desired) > a.opts.MaxParameters || len(s.Reported) > a.opts.MaxParameters {
@@ -143,7 +146,10 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 	if err := validateExecution(s, sourceSchema); err != nil {
 		return nil, err
 	}
-	s.Schema = 5 // upgrade on the next atomic save; older binaries must reject this state
+	if err := validateAttempts(s, sourceSchema); err != nil {
+		return nil, err
+	}
+	s.Schema = 6 // upgrade on the next atomic save; older binaries must reject this state
 	if s.Inbox == nil {
 		s.Inbox = map[string]string{}
 	}
@@ -227,23 +233,33 @@ func (a *Actor) save(ctx context.Context, s *snapshot) error {
 	return a.saveWithBudget(ctx, s, a.opts.MaxBytes)
 }
 func (a *Actor) saveWithBudget(ctx context.Context, s *snapshot, maxBytes int) error {
-	if err := validateExecution(s, s.Schema); err != nil {
-		return err
-	}
-	if err := a.validateEvents(s); err != nil {
-		return err
-	}
-	if len(s.Receipts) > a.opts.MaxReceipts || len(s.Commands) > a.opts.MaxCommands || len(s.Desired) > a.opts.MaxParameters || len(s.Reported) > a.opts.MaxParameters {
-		return ErrCapacity
-	}
-	b, err := json.Marshal(s)
+	b, err := a.encodeSnapshot(s, maxBytes)
 	if err != nil {
 		return err
 	}
-	if len(b) > maxBytes {
-		return ErrCapacity
-	}
 	return a.backend.Save(ctx, b)
+}
+func (a *Actor) encodeSnapshot(s *snapshot, maxBytes int) ([]byte, error) {
+	if err := validateAttempts(s, s.Schema); err != nil {
+		return nil, err
+	}
+	if err := validateExecution(s, s.Schema); err != nil {
+		return nil, err
+	}
+	if err := a.validateEvents(s); err != nil {
+		return nil, err
+	}
+	if len(s.Receipts) > a.opts.MaxReceipts || len(s.Commands) > a.opts.MaxCommands || len(s.Desired) > a.opts.MaxParameters || len(s.Reported) > a.opts.MaxParameters {
+		return nil, ErrCapacity
+	}
+	b, err := json.Marshal(s)
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > maxBytes {
+		return nil, ErrCapacity
+	}
+	return b, nil
 }
 func fingerprint(v any) (string, error) {
 	b, err := json.Marshal(v)
