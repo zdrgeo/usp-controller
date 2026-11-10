@@ -654,3 +654,14 @@ reporting its error. Failed or ambiguous event-removal commits still stop dispat
 from the locally mutated snapshot. Existing execution gates, bounded capacity and
 no-replay behavior remain in force. No event loss or background worker is added;
 legacy remains the default and schema 8 is unchanged.
+
+
+### Complete queued reconciliation validation
+
+Planning and dispatch now share a deterministic full desired/reported diff. Both
+maintenance and the final pre-attempt gate require fresh typed observations for
+all desired paths, including paths omitted from a queued Set because they already
+matched. A changed diff cancels the old plan rather than silently sending an
+incomplete update or rewriting accepted intent. A cancelled generated write is
+not recreated under the same desired revision. Legacy remains the default; schema
+8, explicit-command behavior and persistence protocols are unchanged.

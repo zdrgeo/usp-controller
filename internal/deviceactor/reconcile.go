@@ -32,32 +32,17 @@ func (a *Actor) currentGeneratedCommand(s *snapshot, c storedCommand) bool {
 }
 
 func (a *Actor) currentReconciliation(s *snapshot, c storedCommand) bool {
-	if a.opts.Policy == nil || !a.opts.Policy.Reconcile || c.DesiredRevision != s.DesiredRevision {
+	if c.DesiredRevision != s.DesiredRevision {
 		return false
 	}
-	for path, v := range s.Desired {
-		if !a.opts.Policy.Allows(path, v, true) {
-			return false
-		}
+	// Rebuild the complete diff without the one-command-per-revision admission
+	// guard. Observation changes may invalidate paths omitted from the old Set.
+	expected, _ := a.reconciliationDiff(s, a.opts.Now())
+	if expected == nil {
+		return false
 	}
 	req := new(usp.Request)
-	if proto.Unmarshal(c.Payload, req) != nil || req.GetSet() == nil {
-		return false
-	}
-	for _, obj := range req.GetSet().UpdateObjs {
-		for _, param := range obj.ParamSettings {
-			path := obj.ObjPath + param.Param
-			want, ok := s.Desired[path]
-			if !ok || want.Value != param.Value {
-				return false
-			}
-			got, ok := s.Reported[path]
-			if !ok || !a.opts.Now().Before(got.FreshUntil) || !a.opts.Policy.Allows(path, got.Value, false) || got.Value == want {
-				return false
-			}
-		}
-	}
-	return true
+	return proto.Unmarshal(c.Payload, req) == nil && proto.Equal(req, expected)
 }
 
 // planReconciliation requires a fresh observation for every managed desired path.
@@ -85,13 +70,25 @@ func (a *Actor) planReconciliation(s *snapshot) (*usp.Request, string) {
 	if recorded {
 		return nil, "attempt_recorded"
 	}
+	return a.reconciliationDiff(s, a.opts.Now())
+}
+
+// Planning and both dispatch checks use one deterministic diff at one clock
+// reading, including fresh observations for paths that need no update.
+func (a *Actor) reconciliationDiff(s *snapshot, now time.Time) (*usp.Request, string) {
+	if a.opts.Policy == nil || !a.opts.Policy.Reconcile {
+		return nil, "disabled"
+	}
+	if s.DesiredRevision == 0 || len(s.Desired) == 0 {
+		return nil, "idle"
+	}
 	paths := make([]string, 0, len(s.Desired))
 	for path, want := range s.Desired {
 		if !a.opts.Policy.Allows(path, want, true) {
 			return nil, "policy_blocked"
 		}
 		got, ok := s.Reported[path]
-		if !ok || !a.opts.Now().Before(got.FreshUntil) || !a.opts.Policy.Allows(path, got.Value, false) {
+		if !ok || !now.Before(got.FreshUntil) || !a.opts.Policy.Allows(path, got.Value, false) {
 			return nil, "waiting_observation"
 		}
 		if got.Value != want {

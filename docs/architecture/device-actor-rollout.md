@@ -114,11 +114,18 @@ error in that invocation.
 
 Offline desired updates coalesce naturally: generation happens when dispatch can
 proceed and uses the latest revision. A generated queued command is cancelled if
-the desired revision, policy or relevant observation ceases to be eligible before
-publication. A running command cannot be revoked retroactively. Later responses
+the desired revision, policy or complete current diff ceases to be eligible before
+publication. Planning, maintenance and the final pre-attempt check now share the
+same deterministic diff builder. Every desired path must still have a fresh, typed
+observation, including paths omitted from the Set because they already matched.
+New drift on an omitted path, convergence of an included path, or expiry of any
+desired-path observation cancels the old plan. The actor does not expand or rewrite
+its payload or automatically generate a replacement under the same revision.
+Changes to observed values that leave the complete requested diff unchanged do
+not invalidate an otherwise eligible plan. Each diff check uses one clock reading. A running command cannot be revoked retroactively. Later responses
 cannot mark a newer desired revision converged.
 
-Each desired revision authorizes **at most one generated command**, including
+Each desired revision authorizes **at most one generated Set**, including
 commands later cancelled, expired or failed. There is no automatic retry after
 Set success with missing verification, after drift, or after an unknown outcome.
 A reviewed new desired mutation (even to the same value) creates a new revision,
@@ -126,11 +133,13 @@ but an unresolved unknown command still blocks dispatch. This is a deliberately
 conservative first reconciliation policy, not continuous self-healing.
 
 A Set response never updates reported values. Convergence requires a fresh matching
-ValueChange observation or trusted internal Report import. Initial and ongoing
-ValueChange subscriptions must be provisioned separately. Public Get responses are
-not automatically imported into the twin and there is no automatic refresh polling
-in this foundation. Without observations, reconciliation waits. Freshness remains
-the existing five-minute window; device time and causal ordering are not inferred.
+ValueChange observation, trusted internal Report import, or an opt-in
+[correlated Get projection](device-get-observations.md). Initial and ongoing
+ValueChange subscriptions must be provisioned separately. Optional bounded
+[bootstrap](device-observation-reads.md) and [verification](device-verification-reads.md)
+reads provide observation opportunities without periodic polling or write retries.
+Without usable observations, reconciliation waits. The default freshness window
+is five minutes; device time is not trusted.
 
 ## Diagnostics and schema migration
 
@@ -281,3 +290,13 @@ to avoid coupling command availability to the event destination. Pending events
 remain durable and errors remain visible. Storage/ambiguous removal errors still
 stop the turn, and hard capacity remains a backpressure boundary. The option is
 disabled by default; legacy and snapshot schema 8 are unchanged.
+
+
+## Complete queued reconciliation validation
+
+The complete-diff checks do not change snapshot schema 8 or enable reconciliation
+in any deployment. Legacy remains the default. The race-enabled full Go suite
+and `go vet` passed; focused checks cover expiry of an unchanged desired path
+both before and during export, expansion/shrinkage of a queued diff and continued
+eligibility when observation values change without altering the requested diff.
+Storage fault drills were not repeated for this actor-local eligibility change.
