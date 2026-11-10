@@ -29,7 +29,7 @@ func NewExecuting(id device.DeviceIdentity, b Backend, o Options, t device.Devic
 	return a, nil
 }
 func commandView(c storedCommand, req *usp.Request) (device.DeviceCommand, error) {
-	out := device.DeviceCommand{DesiredRevision: c.DesiredRevision, CommandReceipt: c.Receipt, Request: req, Deadline: c.Deadline, Reason: c.Reason, MessageID: c.MessageID, AttemptID: c.MessageID, OperationKey: c.OperationKey}
+	out := device.DeviceCommand{UnknownAcknowledgement: c.UnknownAcknowledgement, DesiredRevision: c.DesiredRevision, CommandReceipt: c.Receipt, Request: req, Deadline: c.Deadline, Reason: c.Reason, MessageID: c.MessageID, AttemptID: c.MessageID, OperationKey: c.OperationKey}
 	if len(c.Result) > 0 {
 		out.Result = new(usp.Msg)
 		if err := proto.Unmarshal(c.Result, out.Result); err != nil {
@@ -102,7 +102,7 @@ func (a *Actor) Tick(ctx context.Context) error {
 		return nil
 	}
 	for _, c := range s.Commands {
-		if c.Receipt.State == device.CommandUnknown || c.Receipt.State == device.CommandAwaitingResponse || c.Receipt.State == device.CommandAwaitingCompletion {
+		if blocksUnknown(c) || c.Receipt.State == device.CommandAwaitingResponse || c.Receipt.State == device.CommandAwaitingCompletion {
 			return nil
 		}
 	}

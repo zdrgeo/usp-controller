@@ -533,3 +533,17 @@ bounded workers plus periodic fallback. Queries never fan out to actors, and mar
 stale/unavailable rows explicitly. Replicas maintain independent eventually
 consistent views; this is not a shared command-claiming store or global directory.
 Legacy and existing canary behavior remain unchanged when the feature is omitted.
+
+
+### Operator recovery implementation
+
+An end-to-end [unknown-outcome acknowledgement workflow](device-actor-canary.md#operator-acknowledgement-of-an-unknown-outcome)
+now records explicit operator acceptance of proceeding despite an uncertain
+attempt. The actor, authenticated command API and Dapr callback use immutable
+request IDs, current-revision checks and one atomic decision/command update.
+Neither the original attempt nor a generated write for the same desired revision
+is replayed. The command remains unknown until protocol evidence settles it;
+audit data and old correlations remain available. Snapshot schema 4 prevents
+older writers from silently ignoring the new barrier semantics. Legacy remains
+the default. This is an operational recovery feature; retention, global routing,
+production telemetry and real-device rollout remain separate work.

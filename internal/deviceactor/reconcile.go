@@ -64,7 +64,7 @@ func (a *Actor) planReconciliation(s *snapshot) (*usp.Request, string) {
 	}
 	recorded := false
 	for _, c := range s.Commands {
-		if c.Receipt.State == device.CommandUnknown {
+		if blocksUnknown(c) {
 			return nil, "blocked_unknown"
 		}
 		if c.DesiredRevision == s.DesiredRevision {
@@ -145,6 +145,7 @@ type Status struct {
 	DesiredRevision      uint64                      `json:"desired_revision"`
 	ReportedRevision     uint64                      `json:"reported_revision"`
 	Reconciliation       string                      `json:"reconciliation"`
+	BlockingUnknown      int                         `json:"blocking_unknown"`
 	CommandStates        map[device.CommandState]int `json:"command_states"`
 	PendingEvents        int                         `json:"pending_events"`
 	NotificationReceipts int                         `json:"notification_receipts"`
@@ -175,6 +176,9 @@ func (a *Actor) GetStatus(ctx context.Context) (Status, error) {
 	}
 	for _, c := range s.Commands {
 		out.CommandStates[c.Receipt.State]++
+		if blocksUnknown(c) {
+			out.BlockingUnknown++
+		}
 	}
 	if len(s.Outbox) > 0 {
 		at := s.Outbox[0].ReceivedAt

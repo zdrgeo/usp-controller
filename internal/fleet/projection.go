@@ -305,6 +305,9 @@ func validateStatus(s deviceactor.Status, site string) error {
 	default:
 		return ErrInvalid
 	}
+	if s.BlockingUnknown < 0 || s.BlockingUnknown > s.CommandStates[device.CommandUnknown] {
+		return ErrInvalid
+	}
 	total := 0
 	for state, n := range s.CommandStates {
 		if n < 0 || n > s.MaxCommands {

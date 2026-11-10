@@ -163,12 +163,11 @@ Unmatched late responses are ignored by runtime ingress.
 | Publish-result save fails | Read durable state later; no replay of attempting |
 | Response deadline passes | Unknown, not failed or requeued |
 | Response arrives after unknown | May resolve the command using the original identity |
-| Unknown operation remains | Further command dispatch for this device is blocked |
+| Unknown operation remains unacknowledged | Further command dispatch for this device is blocked |
 
 There is deliberately no automatic retry of a command or desired-state write.
 QoS 1 PUBACK means broker acceptance only; QoS 0 completion does not claim PUBACK.
-MQTT retransmissions remain possible. Desired-state reconciliation is not enabled without the separate [phase-6 policy](device-actor-rollout.md). There is no operator unknown-resolution endpoint yet:
-use a reviewed reconciliation procedure before continuing an affected canary.
+MQTT retransmissions remain possible. Desired-state reconciliation is not enabled without the separate [phase-6 policy](device-actor-rollout.md). An explicit [operator acknowledgement](#operator-acknowledgement-of-an-unknown-outcome) can release the uncertainty barrier after independent review; it never replays the uncertain attempt.
 
 ## Durable notifications and export
 
@@ -262,3 +261,80 @@ Schema-3 writers and optional twin/reconciliation settings are described in the
 [phase-6 guide](device-actor-rollout.md). Upgrading and saving state prevents rollback
 to schema-2-only binaries. Leave the twin policy omitted to preserve existing
 canary API and dispatch behavior.
+
+
+## Operator acknowledgement of an unknown outcome
+
+An unknown outcome blocks subsequent work until protocol evidence settles it or
+an operator explicitly accepts proceeding despite the uncertainty. After reviewing
+the device independently, read the command's current revision and submit:
+
+```http
+POST /v2/devices/{device}/commands/{command}/acknowledge-unknown
+Authorization: Bearer <existing-operator-api-token>
+X-USP-Site: <configured-site>
+Content-Type: application/json
+
+{"request_id":"review-incident-123","expected_revision":3,"reason":"Independent device review complete; allow subsequent work. Incident 123"}
+```
+
+The bearer, optional configured site check and explicit device inventory are the
+same as the command API. The callback is available only for execution-enabled
+actors. This records a decision through the existing shared operator token; it
+does not introduce per-operator authentication or claim an authenticated reviewer
+name. Use the reason to reference the independent review. Reasons are trimmed,
+required and bounded to 1024 bytes. Decision IDs share the device mutation receipt
+namespace and must be stable, distinct from command IDs and outside the reserved
+`reconcile-` namespace.
+
+Only a currently unacknowledged `unknown` command at the supplied revision can
+be acknowledged. A command already settled by concurrent protocol evidence or a
+stale revision returns 409. The actor atomically stores the decision receipt and
+`unknown_acknowledgement` audit on the original command, advances its revision
+once and repairs maintenance scheduling. The audit contains the request ID,
+acknowledgement revision, reason and controller-assigned `recorded_at` time. No
+MQTT publication occurs inside this operation.
+
+The command's state remains `unknown`; acknowledgement is not evidence that the
+device succeeded, failed or did nothing. Its original message ID, operation key,
+request and response/completion evidence remain intact. Later validated responses
+or OperationComplete can still settle the command while preserving the audit.
+An async late response may enter `awaiting_completion` and temporarily block new
+dispatch again; the acknowledgement remains an authorization for this original
+attempt if its completion later becomes unknown.
+
+Future maintenance may dispatch other queued work, subject to their existing
+limits and readiness checks. The original attempt is never requeued. A generated
+reconciliation command still consumes its one attempt for that desired revision;
+another desired revision is required to authorize another generated attempt.
+Other unacknowledged unknown commands continue to block the device.
+
+Retry exactly the same decision ID/body after disconnection or an uncertain save.
+An identical retry repairs scheduling and returns current command state with the
+same immutable audit, even if late evidence has since arrived. Reusing the ID for
+changed content or another command conflicts. An uncommitted save leaves the
+barrier in place; a committed save can release it even when its reply was lost.
+
+Twin `Unknown` and status `command_states.unknown` retain all currently uncertain
+outcomes. Twin `BlockingUnknown` and status `blocking_unknown` count only the
+unacknowledged ones. Fleet rows carry this status after refresh; aggregate unknown
+counts still describe outcomes, not execution barriers. The decision does not
+alter reported twin values, claim convergence or reclaim capacity. Command,
+correlation and decision receipts remain bounded and retained.
+
+### Schema 4 and validation
+
+New actor saves use schema 4. Schema 1/2/3 snapshots are read and upgraded on the
+next atomic save, preserving commands, receipts, twin state and events. Older
+actor binaries reject schema 4: stop/drain the cohort and roll forward rather than
+rolling a mixed schema-3 writer back over upgraded state. The loader verifies that
+every acknowledgement and its immutable fingerprinted receipt agree, and rejects
+acknowledgement metadata hidden in an older schema. Snapshot administration
+preserves these checks and records. Legacy remains the default.
+
+Validation on 2026-11-10: `go test -race ./...` and `go vet ./...` passed. Targeted
+checks cover failed/ambiguous saves, restart, immutable retries, no replay, schema-3
+queue upgrade and downgrade rejection, late response evidence, API access/routing
+and reconciliation's new-revision requirement. The storage protocol and Dapr
+invocation transport are unchanged; the long compaction/fault matrix was not
+rerun for this application-level change.

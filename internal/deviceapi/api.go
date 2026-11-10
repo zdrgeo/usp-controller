@@ -117,6 +117,26 @@ func Handler(next http.Handler, invoker Invoker, devices map[string]device.Devic
 		}
 		output(w, 200, b)
 	}))
+	mux.HandleFunc("POST /v2/devices/{device}/commands/{command}/acknowledge-unknown", auth(func(w http.ResponseWriter, r *http.Request, id device.DeviceIdentity) {
+		var input struct {
+			RequestID        device.RequestID `json:"request_id"`
+			ExpectedRevision uint64           `json:"expected_revision"`
+			Reason           string           `json:"reason"`
+		}
+		if !decode(w, r, &input) {
+			return
+		}
+		if !validID(r.PathValue("command")) || !validID(string(input.RequestID)) || strings.HasPrefix(string(input.RequestID), "reconcile-") || input.ExpectedRevision == 0 || strings.TrimSpace(input.Reason) == "" || len(input.Reason) > 1024 {
+			http.Error(w, "request_id, current expected_revision and operator reason required", 400)
+			return
+		}
+		b, err := invoker.Invoke(r.Context(), id, "AcknowledgeUnknown", deviceactor.CommandUnknownAcknowledgement{CommandID: device.RequestID(r.PathValue("command")), RequestID: input.RequestID, ExpectedRevision: input.ExpectedRevision, Reason: input.Reason})
+		if err != nil {
+			failure(w, err)
+			return
+		}
+		output(w, 200, b)
+	}))
 	if opts.TwinEnabled {
 		mux.HandleFunc("GET /v2/devices/{device}/twin", auth(func(w http.ResponseWriter, r *http.Request, id device.DeviceIdentity) {
 			b, err := invoker.Invoke(r.Context(), id, "GetTwin", nil)

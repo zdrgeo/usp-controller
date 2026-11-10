@@ -150,8 +150,9 @@ site routing and value redaction remain future work. A fleet projection
 must be explicitly eventually consistent and must never claim to be the actor's
 current authoritative state.
 
-New saves use snapshot schema **3**, preserving schema 1/2 state on upgrade and
-recording generated command provenance. Old binaries reject schema 3; binary
+New saves use snapshot schema **4**, preserving schema 1/2/3 state on upgrade,
+recording generated command provenance and audited operator acknowledgement of
+unknown outcomes. See the [operator workflow](device-actor-canary.md#operator-acknowledgement-of-an-unknown-outcome). Older binaries reject schema 4; binary
 rollback over upgraded state is unsupported. Drain senders and use a reviewed
 state migration or roll forward. Merely clearing state can lose attempts and
 receipts and is not a rollback procedure. Existing bounded retention limitations
@@ -190,3 +191,15 @@ loss and established connections with a black-holed path, with bounded recovery
 checks. This local test does not
 close the asymmetric-partition, stale-writer, real-device or disaster-recovery
 gates above. Legacy remains the default.
+
+
+### Operator recovery continuation
+
+Unknown outcomes now support explicit, revision-checked acknowledgement through
+the command API. The durable decision releases the execution barrier while
+preserving the unknown outcome, attempt identity and late evidence correlation.
+It never repeats a generated command for the same desired revision. A new desired
+revision is still required to authorize another attempt. Status `blocking_unknown`
+and twin `BlockingUnknown` distinguish unresolved barriers from acknowledged but
+still uncertain outcomes. No real-device rollout or automatic outcome inference
+is enabled by this feature; legacy remains the default.

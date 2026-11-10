@@ -123,6 +123,19 @@ func (h *Host) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			out, err := commandOutput(command)
 			respond(w, out, err)
 			return
+		case "AcknowledgeUnknown":
+			var input CommandUnknownAcknowledgement
+			if !h.decode(w, r, &input) {
+				return
+			}
+			command, err := a.AcknowledgeUnknown(r.Context(), device.AcknowledgeUnknownRequest{ID: input.CommandID, RequestID: input.RequestID, ExpectedRevision: input.ExpectedRevision, Reason: input.Reason})
+			if err != nil {
+				respond(w, nil, err)
+				return
+			}
+			out, err := commandOutput(command)
+			respond(w, out, err)
+			return
 		case "HandleNotify":
 			var input ResponseInput
 			if !h.decode(w, r, &input) {

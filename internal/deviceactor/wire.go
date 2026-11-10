@@ -25,21 +25,22 @@ func (in CommandInput) Domain() (device.CommandRequest, error) {
 }
 
 type CommandOutput struct {
-	DesiredRevision uint64              `json:"desired_revision,omitempty"`
-	RequestID       device.RequestID    `json:"request_id"`
-	Revision        uint64              `json:"revision"`
-	State           device.CommandState `json:"state"`
-	Deadline        *time.Time          `json:"deadline,omitempty"`
-	OperationKey    string              `json:"operation_key,omitempty"`
-	Completion      json.RawMessage     `json:"completion,omitempty"`
-	MessageID       string              `json:"message_id,omitempty"`
-	Reason          string              `json:"reason,omitempty"`
-	Request         json.RawMessage     `json:"request,omitempty"`
-	Result          json.RawMessage     `json:"result,omitempty"`
+	UnknownAcknowledgement *device.UnknownAcknowledgement `json:"unknown_acknowledgement,omitempty"`
+	DesiredRevision        uint64                         `json:"desired_revision,omitempty"`
+	RequestID              device.RequestID               `json:"request_id"`
+	Revision               uint64                         `json:"revision"`
+	State                  device.CommandState            `json:"state"`
+	Deadline               *time.Time                     `json:"deadline,omitempty"`
+	OperationKey           string                         `json:"operation_key,omitempty"`
+	Completion             json.RawMessage                `json:"completion,omitempty"`
+	MessageID              string                         `json:"message_id,omitempty"`
+	Reason                 string                         `json:"reason,omitempty"`
+	Request                json.RawMessage                `json:"request,omitempty"`
+	Result                 json.RawMessage                `json:"result,omitempty"`
 }
 
 func commandOutput(c device.DeviceCommand) (CommandOutput, error) {
-	out := CommandOutput{DesiredRevision: c.DesiredRevision, RequestID: c.ID, Revision: c.Revision, State: c.State, Deadline: &c.Deadline, MessageID: c.MessageID, Reason: c.Reason, OperationKey: c.OperationKey}
+	out := CommandOutput{UnknownAcknowledgement: c.UnknownAcknowledgement, DesiredRevision: c.DesiredRevision, RequestID: c.ID, Revision: c.Revision, State: c.State, Deadline: &c.Deadline, MessageID: c.MessageID, Reason: c.Reason, OperationKey: c.OperationKey}
 	var err error
 	if c.Request != nil {
 		out.Request, err = protojson.Marshal(c.Request)
@@ -66,4 +67,12 @@ type CommandCancel struct {
 type ResponseInput struct {
 	Identity device.DeviceIdentity `json:"identity"`
 	Message  json.RawMessage       `json:"message"`
+}
+
+// CommandUnknownAcknowledgement is an explicit operator release, never a retry.
+type CommandUnknownAcknowledgement struct {
+	RequestID        device.RequestID `json:"request_id"`
+	CommandID        device.RequestID `json:"command_id"`
+	ExpectedRevision uint64           `json:"expected_revision"`
+	Reason           string           `json:"reason"`
 }

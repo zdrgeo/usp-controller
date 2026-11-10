@@ -35,6 +35,7 @@ type DeviceActor interface {
 	EnqueueCommand(context.Context, CommandRequest) (CommandReceipt, error)
 	GetCommand(context.Context, RequestID) (DeviceCommand, error)
 	CancelCommand(context.Context, CancelCommandRequest) (DeviceCommand, error)
+	AcknowledgeUnknown(context.Context, AcknowledgeUnknownRequest) (DeviceCommand, error)
 	HandleResponse(context.Context, DeviceResponse) error
 	HandleNotify(context.Context, DeviceNotification) (NotifyReceipt, error)
 	Tick(context.Context) error
@@ -57,6 +58,7 @@ type DeviceTwin struct {
 	LastContact                       time.Time
 	Convergence                       string
 	Pending, Unknown                  []RequestID
+	BlockingUnknown                   []RequestID
 }
 
 // Same request ID and immutable content returns the original receipt. A changed
@@ -98,7 +100,25 @@ type CommandReceipt struct {
 	Revision uint64
 	State    CommandState
 }
+
+// UnknownAcknowledgement authorizes subsequent work despite an uncertain attempt.
+// It is an operator decision, not evidence of success, failure or nonexecution.
+type UnknownAcknowledgement struct {
+	RequestID  RequestID `json:"request_id"`
+	Revision   uint64    `json:"revision"`
+	Reason     string    `json:"reason"`
+	RecordedAt time.Time `json:"recorded_at"`
+}
+type AcknowledgeUnknownRequest struct {
+	ID               RequestID
+	RequestID        RequestID
+	ExpectedRevision uint64
+	Reason           string
+}
+
 type DeviceCommand struct {
+	UnknownAcknowledgement *UnknownAcknowledgement
+
 	DesiredRevision uint64
 	CommandReceipt
 	Request                            *usp.Request

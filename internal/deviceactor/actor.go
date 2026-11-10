@@ -81,15 +81,16 @@ type receipt struct {
 	Revision          uint64
 }
 type storedCommand struct {
-	DesiredRevision uint64
-	Receipt         device.CommandReceipt
-	Payload         []byte // deterministic protobuf, never encoding/json of a protobuf oneof
-	Deadline        time.Time
-	Reason          string
-	MessageID       string
-	Result          []byte
-	OperationKey    string
-	Completion      []byte
+	UnknownAcknowledgement *device.UnknownAcknowledgement `json:",omitempty"`
+	DesiredRevision        uint64
+	Receipt                device.CommandReceipt
+	Payload                []byte // deterministic protobuf, never encoding/json of a protobuf oneof
+	Deadline               time.Time
+	Reason                 string
+	MessageID              string
+	Result                 []byte
+	OperationKey           string
+	Completion             []byte
 }
 type snapshot struct {
 	Schema                            int
@@ -111,7 +112,7 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &snapshot{Schema: 3, Identity: a.id, Desired: map[string]device.ParameterValue{}, Reported: map[string]device.Observation{}, Receipts: map[device.RequestID]receipt{}, Commands: map[device.RequestID]storedCommand{}}
+	s := &snapshot{Schema: 4, Identity: a.id, Desired: map[string]device.ParameterValue{}, Reported: map[string]device.Observation{}, Receipts: map[device.RequestID]receipt{}, Commands: map[device.RequestID]storedCommand{}}
 	s.Inbox = map[string]string{}
 	if len(b) == 0 {
 		return s, nil
@@ -123,13 +124,14 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 	if err = json.Unmarshal(b, s); err != nil {
 		return nil, fmt.Errorf("decode actor state: %w", err)
 	}
-	if (s.Schema >= 2 && s.Inbox == nil) || (s.Schema != 1 && s.Schema != 2 && s.Schema != 3) || s.Identity != a.id || s.Desired == nil || s.Reported == nil || s.Receipts == nil || s.Commands == nil {
+	if (s.Schema >= 2 && s.Inbox == nil) || (s.Schema != 1 && s.Schema != 2 && s.Schema != 3 && s.Schema != 4) || s.Identity != a.id || s.Desired == nil || s.Reported == nil || s.Receipts == nil || s.Commands == nil {
 		return nil, fmt.Errorf("unsupported or inconsistent actor state")
 	}
 	if len(s.Receipts) > a.opts.MaxReceipts || len(s.Commands) > a.opts.MaxCommands || len(s.Desired) > a.opts.MaxParameters || len(s.Reported) > a.opts.MaxParameters {
 		return nil, ErrCapacity
 	}
-	s.Schema = 3 // upgrade on the next atomic save; older binaries must reject this state
+	sourceSchema := s.Schema
+	s.Schema = 4 // upgrade on the next atomic save; older binaries must reject this state
 	if s.Inbox == nil {
 		s.Inbox = map[string]string{}
 	}
@@ -144,10 +146,27 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 		}
 		queued[id] = true
 	}
+	acknowledged := map[device.RequestID]bool{}
 	for id, c := range s.Commands {
 		r, ok := s.Receipts[id]
 		if !ok || r.Kind != "command" || c.Receipt.ID != id || c.Receipt.Revision == 0 || c.Deadline.IsZero() {
 			return nil, fmt.Errorf("inconsistent command state")
+		}
+		if ack := c.UnknownAcknowledgement; ack != nil {
+			if sourceSchema < 4 || !validAcknowledgement(ack) || ack.Revision > c.Receipt.Revision || c.MessageID == "" || acknowledged[ack.RequestID] {
+				return nil, fmt.Errorf("invalid unknown acknowledgement")
+			}
+			fp, err := fingerprint(device.AcknowledgeUnknownRequest{ID: id, RequestID: ack.RequestID, ExpectedRevision: ack.Revision - 1, Reason: ack.Reason})
+			stored, ok := s.Receipts[ack.RequestID]
+			if err != nil || !ok || stored.Kind != "unknown_ack" || stored.Revision != ack.Revision || stored.Fingerprint != fp {
+				return nil, fmt.Errorf("inconsistent unknown acknowledgement receipt")
+			}
+			acknowledged[ack.RequestID] = true
+			switch c.Receipt.State {
+			case device.CommandUnknown, device.CommandAwaitingCompletion, device.CommandSucceeded, device.CommandFailed:
+			default:
+				return nil, fmt.Errorf("acknowledgement on unattempted command")
+			}
 		}
 		if c.DesiredRevision != 0 {
 			if c.DesiredRevision > s.DesiredRevision || string(id) != fmt.Sprintf("reconcile-%d", c.DesiredRevision) {
@@ -178,6 +197,10 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 		}
 		switch r.Kind {
 		case "desired", "reported":
+		case "unknown_ack":
+			if !acknowledged[id] {
+				return nil, fmt.Errorf("orphan unknown acknowledgement receipt")
+			}
 		case "command":
 			if _, ok := s.Commands[id]; !ok {
 				return nil, fmt.Errorf("receipt missing command")
@@ -238,11 +261,15 @@ func (a *Actor) GetTwin(ctx context.Context) (device.DeviceTwin, error) {
 	for id, c := range s.Commands {
 		if c.Receipt.State == device.CommandUnknown {
 			t.Unknown = append(t.Unknown, id)
+			if blocksUnknown(c) {
+				t.BlockingUnknown = append(t.BlockingUnknown, id)
+			}
 		}
 		if c.Receipt.State == device.CommandQueued || c.Receipt.State == device.CommandAttempting || c.Receipt.State == device.CommandAwaitingResponse || c.Receipt.State == device.CommandAwaitingCompletion {
 			t.Pending = append(t.Pending, id)
 		}
 	}
+	sort.Slice(t.BlockingUnknown, func(i, j int) bool { return t.BlockingUnknown[i] < t.BlockingUnknown[j] })
 	sort.Slice(t.Unknown, func(i, j int) bool { return t.Unknown[i] < t.Unknown[j] })
 	sort.Slice(t.Pending, func(i, j int) bool { return t.Pending[i] < t.Pending[j] })
 	if a.opts.Policy != nil {
