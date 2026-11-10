@@ -432,3 +432,15 @@ attempts require an available hard inbox/outbox slot before beginning; all new
 attempts respect the ordinary byte budget before publication. See the
 [capacity policy and limits](device-actor-capacity.md). Omission preserves prior
 hard-limit behavior. No snapshot migration or default-runtime change is required.
+
+
+## Command discovery and inspection
+
+`GET /v2/devices/{device}/commands` now lists bounded command metadata with optional
+state filtering and view-checked continuation cursors. This lets operators find
+queued, unknown and retained terminal command IDs before using single-command
+inspection, queued cancellation or unknown acknowledgement. No USP payloads or
+free-form reasons are returned, and listing performs no maintenance or dispatch.
+Concurrent command/control changes return 409 and require a fresh first page.
+See [command inspection semantics](device-command-inspection.md). Legacy remains
+the default and snapshot schema 5 is unchanged.

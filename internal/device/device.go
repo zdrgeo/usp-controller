@@ -36,6 +36,7 @@ type DeviceActor interface {
 	SetDesired(context.Context, SetDesiredRequest) (DesiredReceipt, error)
 	EnqueueCommand(context.Context, CommandRequest) (CommandReceipt, error)
 	GetCommand(context.Context, RequestID) (DeviceCommand, error)
+	ListCommands(context.Context, CommandQuery) (CommandPage, error)
 	CancelCommand(context.Context, CancelCommandRequest) (DeviceCommand, error)
 	AcknowledgeUnknown(context.Context, AcknowledgeUnknownRequest) (DeviceCommand, error)
 	HandleResponse(context.Context, DeviceResponse) error

@@ -239,3 +239,14 @@ operation completions can commit within the hard limits. Current reserve values
 are visible through status and fleet rows. This does not prune receipts, replace
 retention planning, or guarantee acceptance of arbitrarily large evidence. Legacy
 remains the default and snapshot schema 5 is unchanged.
+
+
+### Command inspection continuation
+
+The [per-device command listing](device-command-inspection.md) now provides bounded
+metadata pages for discovering accepted work and uncertainty barriers during
+maintenance and rollout. It exposes persisted FIFO positions separately from
+lexical pagination order, and rejects continuations when command/control state
+changes. Operator mutations still need their existing expected revisions; reads
+never alter deadlines or trigger execution. This is neither a global command
+index nor a retention mechanism. Legacy remains the default.

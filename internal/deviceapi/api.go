@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -86,6 +87,38 @@ func Handler(next http.Handler, invoker Invoker, devices map[string]device.Devic
 		}
 		w.Header().Set("Location", "/v2/devices/"+url.PathEscape(id.AgentID)+"/commands/"+url.PathEscape(string(input.RequestID)))
 		output(w, 202, b)
+	}))
+	mux.HandleFunc("GET /v2/devices/{device}/commands", auth(func(w http.ResponseWriter, r *http.Request, id device.DeviceIdentity) {
+		values, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil {
+			http.Error(w, "invalid command query", 400)
+			return
+		}
+		for name, value := range values {
+			if len(value) != 1 || (name != "limit" && name != "cursor" && name != "state") {
+				http.Error(w, "unknown or repeated command query field", 400)
+				return
+			}
+		}
+		query := device.CommandQuery{Cursor: values.Get("cursor"), State: device.CommandState(values.Get("state"))}
+		if raw, ok := values["limit"]; ok {
+			query.Limit, err = strconv.Atoi(raw[0])
+			if err != nil || query.Limit < 1 || query.Limit > deviceactor.MaxCommandPageSize {
+				http.Error(w, "limit must be 1–100", 400)
+				return
+			}
+		}
+		if len(query.Cursor) > deviceactor.MaxCommandCursorBytes || !deviceactor.ValidCommandFilter(query.State) {
+			http.Error(w, "invalid command filter or cursor", 400)
+			return
+		}
+		b, err := invoker.Invoke(r.Context(), id, "ListCommands", query)
+		if err != nil {
+			readFailure(w, err)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		output(w, 200, b)
 	}))
 	mux.HandleFunc("GET /v2/devices/{device}/commands/{command}", auth(func(w http.ResponseWriter, r *http.Request, id device.DeviceIdentity) {
 		if !validID(r.PathValue("command")) {
@@ -237,19 +270,31 @@ func output(w http.ResponseWriter, status int, b []byte) {
 	w.WriteHeader(status)
 	_, _ = w.Write(b)
 }
-func failure(w http.ResponseWriter, err error) {
-	status := 503
+func failureStatus(err error) int {
 	switch {
 	case errors.Is(err, deviceactor.ErrInvalid):
-		status = 400
+		return 400
 	case errors.Is(err, deviceactor.ErrConflict):
-		status = 409
+		return 409
 	case errors.Is(err, deviceactor.ErrNotFound):
-		status = 404
+		return 404
 	case errors.Is(err, deviceactor.ErrCapacity):
-		status = 429
+		return 429
+	default:
+		return 503
 	}
+}
+func failure(w http.ResponseWriter, err error) {
+	status := failureStatus(err)
 	http.Error(w, http.StatusText(status)+"; admission may have committed: retry the same request_id and body", status)
+}
+func readFailure(w http.ResponseWriter, err error) {
+	status := failureStatus(err)
+	message := http.StatusText(status)
+	if status == 409 {
+		message = "command view changed; restart without a cursor"
+	}
+	http.Error(w, message, status)
 }
 
 // Timeout limits API work independently of the command's durable deadline.

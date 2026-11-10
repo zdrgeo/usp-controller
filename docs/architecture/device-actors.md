@@ -582,3 +582,14 @@ byte budget is exhausted, and refuses new Operate dispatch without a hard
 completion slot. No eviction, new retry, SQL claiming or schema change is added;
 legacy remains the default. Retention and physical snapshot decomposition remain
 separate implementation work.
+
+
+### Command inspection implementation
+
+The actor contract, Dapr callback and authenticated API now support bounded
+[command metadata listing](device-command-inspection.md). Versioned cursors check
+an unchanged per-device command/control view; concurrent changes require a fresh
+page rather than silently skipping work. Summaries disclose queue position and
+uncertainty/evidence flags without copying USP payloads or free-form reasons.
+Reads perform no maintenance or dispatch. This supports operator discovery before
+existing cancel/acknowledgement workflows, while legacy remains the default.
