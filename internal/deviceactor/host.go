@@ -84,6 +84,23 @@ func (h *Host) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.transport != nil {
 		switch parts[4] {
+		case "GetExecution":
+			state, err := a.GetExecution(r.Context())
+			respond(w, state, err)
+			return
+		case "SetExecution":
+			var input ExecutionInput
+			if !h.decode(w, r, &input) {
+				return
+			}
+			request, err := input.Domain()
+			if err != nil {
+				respond(w, nil, err)
+				return
+			}
+			receipt, err := a.SetExecution(r.Context(), request)
+			respond(w, receipt, err)
+			return
 		case "EnqueueCommand":
 			var input CommandInput
 			if !h.decode(w, r, &input) {

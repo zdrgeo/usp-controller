@@ -137,6 +137,36 @@ func Handler(next http.Handler, invoker Invoker, devices map[string]device.Devic
 		}
 		output(w, 200, b)
 	}))
+	mux.HandleFunc("GET /v2/devices/{device}/execution", auth(func(w http.ResponseWriter, r *http.Request, id device.DeviceIdentity) {
+		b, err := invoker.Invoke(r.Context(), id, "GetExecution", nil)
+		if err != nil {
+			failure(w, err)
+			return
+		}
+		output(w, 200, b)
+	}))
+	mux.HandleFunc("PUT /v2/devices/{device}/execution", auth(func(w http.ResponseWriter, r *http.Request, id device.DeviceIdentity) {
+		// Require an explicit boolean: an omitted field must never resume dispatch.
+		var input deviceactor.ExecutionInput
+		if !decode(w, r, &input) {
+			return
+		}
+		if !validID(string(input.RequestID)) || strings.HasPrefix(string(input.RequestID), "reconcile-") || input.ExpectedRevision == nil || input.Paused == nil || strings.TrimSpace(input.Reason) == "" || len(input.Reason) > 1024 {
+			http.Error(w, "request_id, expected_revision, explicit paused boolean and reason required", 400)
+			return
+		}
+		request, err := input.Domain()
+		if err != nil {
+			failure(w, err)
+			return
+		}
+		b, err := invoker.Invoke(r.Context(), id, "SetExecution", request)
+		if err != nil {
+			failure(w, err)
+			return
+		}
+		output(w, 200, b)
+	}))
 	if opts.TwinEnabled {
 		mux.HandleFunc("GET /v2/devices/{device}/twin", auth(func(w http.ResponseWriter, r *http.Request, id device.DeviceIdentity) {
 			b, err := invoker.Invoke(r.Context(), id, "GetTwin", nil)

@@ -150,9 +150,9 @@ site routing and value redaction remain future work. A fleet projection
 must be explicitly eventually consistent and must never claim to be the actor's
 current authoritative state.
 
-New saves use snapshot schema **4**, preserving schema 1/2/3 state on upgrade,
-recording generated command provenance and audited operator acknowledgement of
-unknown outcomes. See the [operator workflow](device-actor-canary.md#operator-acknowledgement-of-an-unknown-outcome). Older binaries reject schema 4; binary
+New saves use snapshot schema **5**, preserving schema 1/2/3/4 state on upgrade,
+recording generated command provenance, audited operator acknowledgement of
+unknown outcomes and durable per-device execution control. See the [operator workflow](device-actor-canary.md#operator-acknowledgement-of-an-unknown-outcome). Older binaries reject schema 5; binary
 rollback over upgraded state is unsupported. Drain senders and use a reviewed
 state migration or roll forward. Merely clearing state can lose attempts and
 receipts and is not a rollback procedure. Existing bounded retention limitations
@@ -203,3 +203,16 @@ revision is still required to authorize another attempt. Status `blocking_unknow
 and twin `BlockingUnknown` distinguish unresolved barriers from acknowledged but
 still uncertain outcomes. No real-device rollout or automatic outcome inference
 is enabled by this feature; legacy remains the default.
+
+
+### Per-device execution control continuation
+
+The [execution-control API](device-actor-canary.md#durable-per-device-execution-control)
+now supplies durable revision-checked pause/resume for an individual actor. This
+supports staged maintenance without draining every device on a host. Paused actors
+continue ingestion, event export and deadline maintenance; their existing bounded
+command/desired admission remains available. Resuming preserves unknown-outcome
+and observation/policy guards. It cannot replay old attempts or revoke a send
+already begun. Twin/status/fleet rows expose the control state, and stale retries
+cannot overwrite newer decisions. Legacy remains the default; production rollout,
+retention budgets and site-level scheduling remain separate work.

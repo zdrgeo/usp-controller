@@ -93,6 +93,7 @@ type storedCommand struct {
 	Completion             []byte
 }
 type snapshot struct {
+	Execution                         *device.ExecutionState
 	Schema                            int
 	Identity                          device.DeviceIdentity
 	DesiredRevision, ReportedRevision uint64
@@ -112,7 +113,7 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &snapshot{Schema: 4, Identity: a.id, Desired: map[string]device.ParameterValue{}, Reported: map[string]device.Observation{}, Receipts: map[device.RequestID]receipt{}, Commands: map[device.RequestID]storedCommand{}}
+	s := &snapshot{Schema: 5, Execution: &device.ExecutionState{}, Identity: a.id, Desired: map[string]device.ParameterValue{}, Reported: map[string]device.Observation{}, Receipts: map[device.RequestID]receipt{}, Commands: map[device.RequestID]storedCommand{}}
 	s.Inbox = map[string]string{}
 	if len(b) == 0 {
 		return s, nil
@@ -124,14 +125,17 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 	if err = json.Unmarshal(b, s); err != nil {
 		return nil, fmt.Errorf("decode actor state: %w", err)
 	}
-	if (s.Schema >= 2 && s.Inbox == nil) || (s.Schema != 1 && s.Schema != 2 && s.Schema != 3 && s.Schema != 4) || s.Identity != a.id || s.Desired == nil || s.Reported == nil || s.Receipts == nil || s.Commands == nil {
+	if (s.Schema >= 2 && s.Inbox == nil) || (s.Schema != 1 && s.Schema != 2 && s.Schema != 3 && s.Schema != 4 && s.Schema != 5) || s.Identity != a.id || s.Desired == nil || s.Reported == nil || s.Receipts == nil || s.Commands == nil {
 		return nil, fmt.Errorf("unsupported or inconsistent actor state")
 	}
 	if len(s.Receipts) > a.opts.MaxReceipts || len(s.Commands) > a.opts.MaxCommands || len(s.Desired) > a.opts.MaxParameters || len(s.Reported) > a.opts.MaxParameters {
 		return nil, ErrCapacity
 	}
 	sourceSchema := s.Schema
-	s.Schema = 4 // upgrade on the next atomic save; older binaries must reject this state
+	if err := validateExecution(s, sourceSchema); err != nil {
+		return nil, err
+	}
+	s.Schema = 5 // upgrade on the next atomic save; older binaries must reject this state
 	if s.Inbox == nil {
 		s.Inbox = map[string]string{}
 	}
@@ -196,7 +200,7 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 			return nil, fmt.Errorf("inconsistent receipt")
 		}
 		switch r.Kind {
-		case "desired", "reported":
+		case "desired", "reported", "execution_control":
 		case "unknown_ack":
 			if !acknowledged[id] {
 				return nil, fmt.Errorf("orphan unknown acknowledgement receipt")
@@ -212,6 +216,9 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 	return s, nil
 }
 func (a *Actor) save(ctx context.Context, s *snapshot) error {
+	if err := validateExecution(s, s.Schema); err != nil {
+		return err
+	}
 	if err := a.validateEvents(s); err != nil {
 		return err
 	}
@@ -256,7 +263,7 @@ func (a *Actor) GetTwin(ctx context.Context) (device.DeviceTwin, error) {
 	if err != nil {
 		return device.DeviceTwin{}, err
 	}
-	t := device.DeviceTwin{Identity: a.id, DesiredRevision: s.DesiredRevision, ReportedRevision: s.ReportedRevision, Desired: s.Desired, Reported: s.Reported, LastContact: s.LastContact, Convergence: "converged"}
+	t := device.DeviceTwin{Execution: *s.Execution, Identity: a.id, DesiredRevision: s.DesiredRevision, ReportedRevision: s.ReportedRevision, Desired: s.Desired, Reported: s.Reported, LastContact: s.LastContact, Convergence: "converged"}
 	t.Convergence = a.convergence(s)
 	for id, c := range s.Commands {
 		if c.Receipt.State == device.CommandUnknown {

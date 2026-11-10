@@ -275,6 +275,7 @@ func TestSchemaOneUpgradeAndOutboxIntegrity(t *testing.T) {
 		t.Fatal(err)
 	}
 	state["Schema"] = json.RawMessage(`1`)
+	delete(state, "Execution")
 	delete(state, "Inbox")
 	delete(state, "Outbox")
 	delete(state, "EventSequence")
@@ -283,7 +284,7 @@ func TestSchemaOneUpgradeAndOutboxIntegrity(t *testing.T) {
 		t.Fatal(err)
 	}
 	s, err := a.load(ctx)
-	if err != nil || s.Schema != 4 || len(s.Commands) != 1 || len(s.Outbox) != 1 {
+	if err != nil || s.Schema != 5 || len(s.Commands) != 1 || len(s.Outbox) != 1 {
 		t.Fatal(s, err)
 	}
 	delete(s.Inbox, "new")

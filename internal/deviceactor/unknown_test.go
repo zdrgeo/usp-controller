@@ -27,6 +27,7 @@ func TestUnknownAcknowledgementDurabilityAndNoReplay(t *testing.T) {
 					t.Fatal(err)
 				}
 				prior.Schema = 3
+				prior.Execution = nil
 				b.state, _ = json.Marshal(prior)
 			}
 			f.err = errors.New("publish uncertain")
@@ -112,10 +113,11 @@ func TestUnknownAcknowledgementDurabilityAndNoReplay(t *testing.T) {
 			// Metadata cannot be smuggled into a pre-acknowledgement schema.
 			state := map[string]json.RawMessage{}
 			json.Unmarshal(b.state, &state)
-			if string(state["Schema"]) != "4" {
+			if string(state["Schema"]) != "5" {
 				t.Fatal("new semantics not versioned")
 			}
 			state["Schema"] = json.RawMessage(`3`)
+			delete(state, "Execution")
 			b.state, _ = json.Marshal(state)
 			if _, err := a.GetCommand(ctx, "one"); err == nil {
 				t.Fatal("schema downgrade bypassed acknowledgement validation")

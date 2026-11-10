@@ -31,6 +31,8 @@ type DeviceRequester interface {
 // not register or invoke it.
 type DeviceActor interface {
 	GetTwin(context.Context) (DeviceTwin, error)
+	GetExecution(context.Context) (ExecutionState, error)
+	SetExecution(context.Context, SetExecutionRequest) (ExecutionReceipt, error)
 	SetDesired(context.Context, SetDesiredRequest) (DesiredReceipt, error)
 	EnqueueCommand(context.Context, CommandRequest) (CommandReceipt, error)
 	GetCommand(context.Context, RequestID) (DeviceCommand, error)
@@ -50,7 +52,31 @@ type Observation struct {
 	Source     string
 	FreshUntil time.Time
 }
+
+// ExecutionState is durable per-device dispatch control, independent of MQTT
+// availability and command admission. Pausing cannot revoke an existing attempt.
+type ExecutionState struct {
+	Paused    bool      `json:"paused"`
+	Revision  uint64    `json:"revision"`
+	RequestID RequestID `json:"request_id,omitempty"`
+	Reason    string    `json:"reason,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+}
+type SetExecutionRequest struct {
+	RequestID        RequestID `json:"request_id"`
+	ExpectedRevision uint64    `json:"expected_revision"`
+	Paused           bool      `json:"paused"`
+	Reason           string    `json:"reason"`
+}
+type ExecutionReceipt struct {
+	RequestID RequestID `json:"request_id"`
+	Revision  uint64    `json:"revision"`
+	Paused    bool      `json:"paused"`
+}
+
 type DeviceTwin struct {
+	Execution ExecutionState
+
 	Identity                          DeviceIdentity
 	DesiredRevision, ReportedRevision uint64
 	Desired                           map[string]ParameterValue

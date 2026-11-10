@@ -547,3 +547,15 @@ audit data and old correlations remain available. Snapshot schema 4 prevents
 older writers from silently ignoring the new barrier semantics. Legacy remains
 the default. This is an operational recovery feature; retention, global routing,
 production telemetry and real-device rollout remain separate work.
+
+
+### Durable execution control implementation
+
+The actor and authenticated API now implement per-device revision-checked
+[pause/resume](device-actor-canary.md#durable-per-device-execution-control) for staged
+rollout and maintenance. Each decision is atomically recorded with an immutable
+receipt; old retries cannot undo newer controls. Pausing suppresses new command
+attempts and reconciliation planning while retaining ingestion, event export,
+queue deadlines and accepted intent. Resume obeys existing safety guards and
+does not replay attempts. Schema 5 binds the persisted control to its decision
+receipt and fails closed for missing/corrupt metadata. Legacy remains the default.

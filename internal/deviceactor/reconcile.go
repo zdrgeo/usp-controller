@@ -59,6 +59,9 @@ func (a *Actor) planReconciliation(s *snapshot) (*usp.Request, string) {
 	if a.opts.Policy == nil || !a.opts.Policy.Reconcile {
 		return nil, "disabled"
 	}
+	if s.Execution.Paused {
+		return nil, "paused"
+	}
 	if s.DesiredRevision == 0 || len(s.Desired) == 0 {
 		return nil, "idle"
 	}
@@ -140,6 +143,8 @@ func (a *Actor) scheduleReconciliation(ctx context.Context, s *snapshot) error {
 
 // Status contains no desired/reported values and performs no fleet fanout.
 type Status struct {
+	ExecutionPaused      bool                        `json:"execution_paused"`
+	ExecutionRevision    uint64                      `json:"execution_revision"`
 	Convergence          string                      `json:"convergence"`
 	SiteID               string                      `json:"site_id"`
 	DesiredRevision      uint64                      `json:"desired_revision"`
@@ -170,7 +175,7 @@ func (a *Actor) GetStatus(ctx context.Context) (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	out := Status{Convergence: a.convergence(s), DesiredRevision: s.DesiredRevision, ReportedRevision: s.ReportedRevision, Reconciliation: reason, CommandStates: map[device.CommandState]int{}, PendingEvents: len(s.Outbox), NotificationReceipts: len(s.Inbox), MutationReceipts: len(s.Receipts), StateBytes: len(b), MaxStateBytes: a.opts.MaxBytes, MaxCommands: a.opts.MaxCommands, MaxReceipts: a.opts.MaxReceipts, LastContact: s.LastContact}
+	out := Status{ExecutionPaused: s.Execution.Paused, ExecutionRevision: s.Execution.Revision, Convergence: a.convergence(s), DesiredRevision: s.DesiredRevision, ReportedRevision: s.ReportedRevision, Reconciliation: reason, CommandStates: map[device.CommandState]int{}, PendingEvents: len(s.Outbox), NotificationReceipts: len(s.Inbox), MutationReceipts: len(s.Receipts), StateBytes: len(b), MaxStateBytes: a.opts.MaxBytes, MaxCommands: a.opts.MaxCommands, MaxReceipts: a.opts.MaxReceipts, LastContact: s.LastContact}
 	if a.opts.Policy != nil {
 		out.SiteID = a.opts.Policy.SiteID
 	}

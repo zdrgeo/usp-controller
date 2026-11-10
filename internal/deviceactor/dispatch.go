@@ -98,7 +98,7 @@ func (a *Actor) Tick(ctx context.Context) error {
 	if err = a.exportOne(ctx, s); err != nil {
 		return err
 	}
-	if a.transport == nil {
+	if a.transport == nil || s.Execution.Paused {
 		return nil
 	}
 	for _, c := range s.Commands {

@@ -301,8 +301,11 @@ func validateStatus(s deviceactor.Status, site string) error {
 		return ErrInvalid
 	}
 	switch s.Reconciliation {
-	case "disabled", "idle", "policy_blocked", "waiting_observation", "converged", "eligible", "attempt_recorded", "blocked_unknown":
+	case "disabled", "paused", "idle", "policy_blocked", "waiting_observation", "converged", "eligible", "attempt_recorded", "blocked_unknown":
 	default:
+		return ErrInvalid
+	}
+	if s.ExecutionPaused && s.ExecutionRevision == 0 {
 		return ErrInvalid
 	}
 	if s.BlockingUnknown < 0 || s.BlockingUnknown > s.CommandStates[device.CommandUnknown] {

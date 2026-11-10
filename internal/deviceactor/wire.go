@@ -76,3 +76,18 @@ type CommandUnknownAcknowledgement struct {
 	ExpectedRevision uint64           `json:"expected_revision"`
 	Reason           string           `json:"reason"`
 }
+
+// ExecutionInput requires an explicit choice and revision on every JSON boundary.
+type ExecutionInput struct {
+	RequestID        device.RequestID `json:"request_id"`
+	ExpectedRevision *uint64          `json:"expected_revision"`
+	Paused           *bool            `json:"paused"`
+	Reason           string           `json:"reason"`
+}
+
+func (in ExecutionInput) Domain() (device.SetExecutionRequest, error) {
+	if in.ExpectedRevision == nil || in.Paused == nil {
+		return device.SetExecutionRequest{}, ErrInvalid
+	}
+	return device.SetExecutionRequest{RequestID: in.RequestID, ExpectedRevision: *in.ExpectedRevision, Paused: *in.Paused, Reason: in.Reason}, nil
+}

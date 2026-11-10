@@ -324,10 +324,11 @@ correlation and decision receipts remain bounded and retained.
 
 ### Schema 4 and validation
 
-New actor saves use schema 4. Schema 1/2/3 snapshots are read and upgraded on the
-next atomic save, preserving commands, receipts, twin state and events. Older
-actor binaries reject schema 4: stop/drain the cohort and roll forward rather than
-rolling a mixed schema-3 writer back over upgraded state. The loader verifies that
+Acknowledgements introduced schema 4; current execution-control writers use
+[schema 5](#durable-per-device-execution-control). Schema 1/2/3/4 snapshots are read
+and upgraded on the next atomic save, preserving commands, receipts, twin state
+and events. Older actor binaries reject schema 5: stop/drain the cohort and roll
+forward rather than rolling an older writer back over upgraded state. The loader verifies that
 every acknowledgement and its immutable fingerprinted receipt agree, and rejects
 acknowledgement metadata hidden in an older schema. Snapshot administration
 preserves these checks and records. Legacy remains the default.
@@ -338,3 +339,81 @@ queue upgrade and downgrade rejection, late response evidence, API access/routin
 and reconciliation's new-revision requirement. The storage protocol and Dapr
 invocation transport are unchanged; the long compaction/fault matrix was not
 rerun for this application-level change.
+
+
+## Durable per-device execution control
+
+An execution-enabled actor can pause future command attempts without changing
+host configuration or ownership. The same authenticated, site-checked, explicit
+inventory API exposes:
+
+- `GET /v2/devices/{device}/execution`: current authoritative control state.
+- `PUT /v2/devices/{device}/execution`: an explicit revision-checked decision.
+
+Initially the control is unpaused at revision 0, preserving existing opt-in actor
+behavior. This does not enable actors in legacy mode. Example pause:
+
+```json
+{"request_id":"maintenance-pause-123","expected_revision":0,"paused":true,"reason":"Maintenance window 123"}
+```
+
+Read the current execution revision before each new decision. Resume requires a
+new stable request ID, the current revision, `paused:false` and a reason. Both
+`paused` and `expected_revision` must be explicitly present and non-null at the
+public API and private callback boundaries. Reasons are trimmed, nonempty and
+bounded to 1024 bytes. Request IDs use the existing device mutation receipt
+namespace and cannot use the reserved `reconcile-` prefix.
+
+A 200 response is an immutable decision receipt (`request_id`, `revision`,
+`paused`), not a fresh read of current control. An identical retry returns that
+original decision even after newer controls have been accepted; an old resume
+retry therefore cannot undo a newer pause. Changed retries and stale new decisions
+conflict. `GET /execution` returns the latest revision, paused flag, request ID,
+reason and controller-assigned update time. Like acknowledgement, this uses the
+existing shared operator token, not a new per-operator identity system.
+
+The actor atomically persists control and its receipt. A pause does not require
+reminder repair at the application boundary, so a scheduling failure alone need
+not prevent persistence. Resume and resume retries repair the reminder before
+claiming acceptance. Actor routing, the storage backend and existing host gates
+must still be available. Save failures may have committed: retry the same ID/body
+or read authoritative state. Capacity errors can prevent a control from being
+saved; this is not an unconditional emergency stop. Host drain remains available
+for local shutdown control.
+
+Paused maintenance still expires queued work, marks interrupted/deadline attempts
+unknown and exports one durable event. Notifications, responses and
+OperationComplete continue to persist normally; command/desired admission remains
+bounded and available. Queued intent keeps its original deadline and can expire
+while paused. Only the start of a new MQTT attempt and automatic reconciliation
+planning are suppressed. No command is cancelled or recreated by the pause.
+
+Resume preserves the existing queue, readiness, unknown-outcome, desired-revision,
+policy and fresh-observation checks. It does not acknowledge unknown commands,
+refresh reported values, repeat an attempted command or authorize another
+generated write for the same desired revision. Pausing cannot revoke an attempt
+that already crossed its durable begin boundary or external packets already sent.
+A later actor turn observes the persisted pause; concurrent stale snapshot writes
+remain subject to the existing backend fence.
+
+Twin reads include `Execution`. Status and eventually refreshed fleet rows include
+`execution_paused` and `execution_revision`; managed reconciliation reports
+`paused` while its execution control is paused. Fleet projections remain
+non-authoritative and may lag control changes until periodic refresh.
+
+New saves use snapshot schema **5**. Schema 1/2/3/4 snapshots upgrade to an initial
+unpaused revision-0 control on their next atomic save. Current control is bound to
+its fingerprinted receipt and retained sequential decision history; a missing
+schema-5 control, an altered pause flag, or execution metadata hidden in an older
+schema fails closed. Older binaries reject schema 5, so drain upgraded cohorts and
+roll forward. Snapshot administration preserves the control and decision receipts.
+Administrative restoration can restore an earlier control decision and still
+requires the existing offline review/cutover procedure. Records are not pruned
+and control decisions consume the existing bounded receipt/state budget.
+
+Validation on 2026-11-10: `go test -race ./...` and `go vet ./...` passed. Focused
+checks cover failed/ambiguous commits, restart, immutable old retries, explicit
+JSON field presence on both boundaries, schema-4 queue upgrade, metadata
+corruption, reminder failure, notification/export progress, queued expiry and
+resume preserving unknown/freshness guards. Storage and transport protocols are
+unchanged; the long infrastructure fault/compaction suite was not rerun.
