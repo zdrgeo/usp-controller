@@ -117,6 +117,8 @@ func TestCanaryAsyncEndToEnd(t *testing.T) {
 	defer sidecar.Close()
 	cfg := config.Config{EndpointID: "controller", ClientID: "client", Listen: "127.0.0.1:8080", Broker: "tls://localhost:8883", JournalPath: "events", JournalMaxBytes: 1 << 20, RequestTimeoutSeconds: 1, MaxPending: 10, QoS: 1, Agents: map[string]config.Agent{"device": {Topic: "device/topic", Inbox: "controller/device"}, "legacy": {Topic: "legacy/topic", Inbox: "controller/legacy"}}, ActorCanary: &config.ActorCanary{Enabled: true, EventPubsub: "events", EventTopic: "device-events", Tenant: "tenant", Devices: []string{"device"}, DaprURL: sidecar.URL, CallbackListen: "127.0.0.1:8081", LockPath: filepath.Join(t.TempDir(), "canary.lock")}}
 	cfg.ActorCanary.MaxConcurrentAttempts = 1
+	cfg.ActorCanary.AttemptRatePerSecond = 1
+	cfg.ActorCanary.AttemptRateBurst = 256
 	cfg.ActorCanary.CompletionReserve = &deviceactor.CompletionReserve{StateBytes: 65536, Notifications: 1}
 	mqtt := &mqttFake{ready: true}
 	journal := &journalFake{}
@@ -200,6 +202,14 @@ func TestCanaryAsyncEndToEnd(t *testing.T) {
 	if len(mqtt.sends) != 1 {
 		t.Fatal("no dispatch")
 	}
+	if runtime.AttemptRateBudget == nil {
+		t.Fatal("runtime rate budget missing")
+	}
+	rate, burst, granted, denied := runtime.AttemptRateBudget.Stats()
+	if rate != 1 || burst != 256 || granted != 1 || denied != 0 {
+		t.Fatal("actor did not use shared rate budget", rate, burst, granted, denied)
+	}
+
 	rec := new(record.Record)
 	if err = proto.Unmarshal(mqtt.sends[0], rec); err != nil {
 		t.Fatal(err)

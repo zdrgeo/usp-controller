@@ -167,6 +167,14 @@ func (a *Actor) Tick(ctx context.Context) error {
 	if s.AttemptSequence == math.MaxUint64 {
 		return ErrCapacity
 	}
+	if rate := a.opts.AttemptRateBudget; rate != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if !rate.TryTake() {
+			return nil
+		} // Leave intent queued without beginning.
+	}
 	random := make([]byte, 16)
 	if _, err = rand.Read(random); err != nil {
 		return err

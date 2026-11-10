@@ -262,3 +262,13 @@ maintenance remain intact; local gauges/denial counts expose contention. This is
 one resource bound for reconnect bursts, not a global site rate or outstanding
 response budget. Zero/omission preserves existing actor behavior. No schema change
 is required and legacy remains the default.
+
+
+## Optional local attempt rate
+
+The actor canary can now configure a [host-local rate budget](device-actor-attempt-rate.md)
+independently of concurrent-attempt limits. Both rate and burst must be supplied;
+zero/omission leaves rate limiting disabled. Denied turns retain queued intent
+without beginning a command, and metrics expose local reservations and denials.
+This is not a distributed site quota. Legacy remains the default; schema 8 and
+storage fencing protocols are unchanged.

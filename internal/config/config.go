@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"example.com/usp-controller/internal/device"
 	"example.com/usp-controller/internal/deviceactor"
@@ -55,6 +56,8 @@ func (f FleetProjection) Normalized() FleetProjection {
 }
 
 type ActorCanary struct {
+	AttemptRatePerSecond  int                            `json:"attempt_rate_per_second,omitempty"`
+	AttemptRateBurst      int                            `json:"attempt_rate_burst,omitempty"`
 	MaxConcurrentAttempts int                            `json:"max_concurrent_attempts,omitempty"`
 	CompletionReserve     *deviceactor.CompletionReserve `json:"completion_reserve,omitempty"`
 	Fleet                 *FleetProjection               `json:"fleet,omitempty"`
@@ -170,6 +173,14 @@ func (c Config) Validate() error {
 		}
 	}
 	if a := c.ActorCanary; a != nil {
+		if a.AttemptRatePerSecond != 0 || a.AttemptRateBurst != 0 {
+			if !a.Enabled {
+				return fmt.Errorf("attempt rate requires actor mode")
+			}
+			if _, err := device.NewAttemptRateBudget(a.AttemptRatePerSecond, a.AttemptRateBurst, time.Now); err != nil {
+				return err
+			}
+		}
 		if a.MaxConcurrentAttempts < 0 || a.MaxConcurrentAttempts > device.MaxAttemptConcurrency || (a.MaxConcurrentAttempts != 0 && !a.Enabled) {
 			return fmt.Errorf("attempt concurrency requires actor mode and a limit of 1–%d (or zero to disable)", device.MaxAttemptConcurrency)
 		}

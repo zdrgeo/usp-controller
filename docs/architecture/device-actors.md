@@ -634,3 +634,13 @@ read observations can establish convergence; mismatches and uncertainty do not
 retry writes or reads. Queued work rechecks policy, desired revision and remaining
 need under the existing execution gates. Schema 8 preserves its distinct
 provenance and rejects older writers. Legacy remains the default.
+
+
+### Local attempt rate implementation
+
+An optional shared [host-local token bucket](device-actor-attempt-rate.md) now
+bounds new attempt reservations across the local actor inventory. It composes
+with concurrent-attempt permits, leaves intent queued on denial and never refunds
+a reservation after failed or uncertain work. Passive metrics expose the
+configured rate/burst and reservation/denial counts. No distributed quota, worker
+queue or retry is added. Legacy remains the default and schema 8 is unchanged.

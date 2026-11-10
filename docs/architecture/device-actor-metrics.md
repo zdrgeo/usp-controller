@@ -95,3 +95,12 @@ classification through the real callback encoder. Existing canary tests also run
 with all boundary wrappers wired into Runtime. The long infrastructure fault and
 compaction suite was not rerun: storage protocols and dispatch semantics did not
 change. Legacy remains the default.
+
+
+## Optional local attempt-rate metrics
+
+A configured [attempt rate budget](device-actor-attempt-rate.md) adds four
+label-free series for refill rate, burst capacity, granted reservations and
+denied turns. These are passive local observations; scraping does not refill or
+consume tokens. Combined with the three optional concurrency series, this adds
+at most seven local series beyond the bounded operation families.

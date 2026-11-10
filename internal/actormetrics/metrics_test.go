@@ -166,3 +166,30 @@ func TestBoundaryInstrumentationNeverRetriesOrChangesUncertainty(t *testing.T) {
 		t.Fatal("payload/error detail leaked")
 	}
 }
+
+func TestRateMetricsArePassiveLocalCounters(t *testing.T) {
+	calls := 0
+	budget, err := device.NewAttemptRateBudget(2, 1, func() time.Time { calls++; return time.Unix(1, 0) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	budget.TryTake()
+	budget.TryTake()
+	m := New()
+	m.SetAttemptRateBudget(budget)
+	token := strings.Repeat("x", 32)
+	handler := m.Handler(http.NotFoundHandler(), token)
+	before := calls
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest("GET", "/v2/metrics", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != 200 || !strings.Contains(w.Body.String(), "usp_device_attempt_rate_granted_total 1\n") || !strings.Contains(w.Body.String(), "usp_device_attempt_rate_denied_total 1\n") {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+	if calls != before {
+		t.Fatal("scrape refilled/consumed bucket")
+	}
+}

@@ -48,21 +48,22 @@ func (t transport) Publish(ctx context.Context, id device.DeviceIdentity, attemp
 }
 
 type Runtime struct {
-	AttemptBudget *device.AttemptBudget
-	Metrics       *actormetrics.Registry
-	Devices       map[string]device.DeviceIdentity
-	Client        *deviceactor.Client
-	Host          http.Handler
-	legacy        *controller.Controller
-	routes        map[string]string
-	controllerID  string
-	lock          *os.File
-	mqtt          MQTT
-	replica       *config.Replica
-	eventPubsub   string
-	verifiedUntil atomic.Int64
-	draining      atomic.Bool
-	etcdClient    *http.Client
+	AttemptBudget     *device.AttemptBudget
+	AttemptRateBudget *device.AttemptRateBudget
+	Metrics           *actormetrics.Registry
+	Devices           map[string]device.DeviceIdentity
+	Client            *deviceactor.Client
+	Host              http.Handler
+	legacy            *controller.Controller
+	routes            map[string]string
+	controllerID      string
+	lock              *os.File
+	mqtt              MQTT
+	replica           *config.Replica
+	eventPubsub       string
+	verifiedUntil     atomic.Int64
+	draining          atomic.Bool
+	etcdClient        *http.Client
 }
 
 func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, apiToken string) (*Runtime, error) {
@@ -105,6 +106,13 @@ func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, 
 		}
 		rt.Metrics.SetAttemptBudget(rt.AttemptBudget)
 	}
+	if a.AttemptRatePerSecond > 0 {
+		rt.AttemptRateBudget, err = device.NewAttemptRateBudget(a.AttemptRatePerSecond, a.AttemptRateBurst, time.Now)
+		if err != nil {
+			return fail(err)
+		}
+		rt.Metrics.SetAttemptRateBudget(rt.AttemptRateBudget)
+	}
 	var actors []*deviceactor.Actor
 	for _, id := range a.Devices {
 		identity := device.DeviceIdentity{Tenant: a.Tenant, ControllerID: cfg.EndpointID, AgentID: id}
@@ -112,6 +120,7 @@ func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, 
 		opts := deviceactor.DefaultOptions()
 		opts.Policy = a.Twin
 		opts.AttemptBudget = rt.AttemptBudget
+		opts.AttemptRateBudget = rt.AttemptRateBudget
 		if a.CompletionReserve != nil {
 			opts.CompletionReserve = *a.CompletionReserve
 		}

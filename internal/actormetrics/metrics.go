@@ -22,9 +22,10 @@ type sample struct {
 	buckets [len(bounds)]uint64
 }
 type Registry struct {
-	attemptBudget *device.AttemptBudget
-	mu            sync.Mutex
-	samples       map[key]sample
+	attemptBudget     *device.AttemptBudget
+	attemptRateBudget *device.AttemptRateBudget
+	mu                sync.Mutex
+	samples           map[key]sample
 }
 
 func New() *Registry { return &Registry{samples: map[key]sample{}} }
@@ -102,6 +103,7 @@ func (m *Registry) Handler(next http.Handler, token string, site ...string) http
 		}
 		m.mu.Lock()
 		budget := m.attemptBudget
+		rateBudget := m.attemptRateBudget
 		values := make(map[key]sample, len(m.samples))
 		for k, v := range m.samples {
 			values[k] = v
@@ -145,6 +147,17 @@ func (m *Registry) Handler(next http.Handler, token string, site ...string) http
 			body.WriteString("# HELP usp_device_attempt_budget_denied_total Eligible turns left queued because the local budget was full.\n# TYPE usp_device_attempt_budget_denied_total counter\n")
 			fmt.Fprintf(&body, "usp_device_attempt_budget_denied_total %d\n", budget.Denied())
 		}
+		if rateBudget != nil {
+			rate, burst, granted, denied := rateBudget.Stats()
+			body.WriteString("# HELP usp_device_attempt_rate_per_second Local token refill rate.\n# TYPE usp_device_attempt_rate_per_second gauge\n")
+			fmt.Fprintf(&body, "usp_device_attempt_rate_per_second %d\n", rate)
+			body.WriteString("# HELP usp_device_attempt_rate_burst Local maximum token bucket burst.\n# TYPE usp_device_attempt_rate_burst gauge\n")
+			fmt.Fprintf(&body, "usp_device_attempt_rate_burst %d\n", burst)
+			body.WriteString("# HELP usp_device_attempt_rate_granted_total Local rate reservations including failed begins.\n# TYPE usp_device_attempt_rate_granted_total counter\n")
+			fmt.Fprintf(&body, "usp_device_attempt_rate_granted_total %d\n", granted)
+			body.WriteString("# HELP usp_device_attempt_rate_denied_total Eligible turns left queued by the local rate limit.\n# TYPE usp_device_attempt_rate_denied_total counter\n")
+			fmt.Fprintf(&body, "usp_device_attempt_rate_denied_total %d\n", denied)
+		}
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		_, _ = w.Write([]byte(body.String()))
@@ -157,5 +170,11 @@ func (m *Registry) Handler(next http.Handler, token string, site ...string) http
 func (m *Registry) SetAttemptBudget(budget *device.AttemptBudget) {
 	m.mu.Lock()
 	m.attemptBudget = budget
+	m.mu.Unlock()
+}
+
+func (m *Registry) SetAttemptRateBudget(budget *device.AttemptRateBudget) {
+	m.mu.Lock()
+	m.attemptRateBudget = budget
 	m.mu.Unlock()
 }

@@ -85,3 +85,8 @@ failure or publisher panic. Existing configuration and canary end-to-end checks
 exercise bounds and actual runtime wiring. Storage/transport protocols and schema
 5 are unchanged; the long infrastructure fault/compaction suite was not rerun.
 Legacy remains the default.
+
+
+A separate opt-in [attempt rate budget](device-actor-attempt-rate.md) can now
+limit reservations per second with a bounded burst. Rate denial releases an
+acquired concurrency permit; neither budget is a durable site-wide quota.
