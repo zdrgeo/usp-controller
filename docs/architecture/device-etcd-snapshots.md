@@ -255,5 +255,17 @@ the main fixture unchanged. Single- and three-endpoint backends each survive two
 retention cycles: the server expires the captured read revision on every member,
 rejects the held save atomically, and accepts recovery after the same actor reloads.
 Stable request retries preserve one receipt without another write. This is periodic
-automatic compaction coverage; revision-count retention and concurrent fault
-injection remain separate qualification work. Legacy remains the default.
+automatic compaction coverage; revision-count retention is covered separately
+below, while concurrent fault injection remains separate qualification work. Legacy remains the default.
+
+
+The [revision-count automatic compaction fixture](device-dapr-integration.md#live-etcd-revision-count-automatic-compaction-and-recovery)
+uses an independent three-member cluster and the pinned server's real five-minute
+scheduler. With eight revisions retained, both one- and three-endpoint clients
+keep their captured reads through the first check, expire after unrelated writes
+advance the retention threshold at the second check, and recover through fresh
+reads on the same actors. Every member must demonstrate both retained and
+compacted history, and server logs must identify the exact expected targets.
+Duplicate requests retain one durable receipt. Run the full live suite with
+`-parallel=2 -timeout=20m` to overlap this independent fixture with the existing
+Dapr tests. Legacy remains the default.

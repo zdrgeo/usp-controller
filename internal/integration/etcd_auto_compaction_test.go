@@ -62,7 +62,7 @@ func (p *autoCompactionProbe) RoundTrip(r *http.Request) (*http.Response, error)
 
 // Auto compaction is enabled only on this isolated cohort, never on the main
 // fixture used for outage/restore tests. The pinned server uses its real clock.
-func startAutoCompactionEtcd(t *testing.T) ([]string, []string) {
+func startAutoCompactionEtcd(t *testing.T, mode, retention string) ([]string, []string) {
 	t.Helper()
 	network := fmt.Sprintf("usp-dapr-test-autocompact-%d", time.Now().UnixNano())
 	docker(t, "network", "create", network)
@@ -72,7 +72,7 @@ func startAutoCompactionEtcd(t *testing.T) ([]string, []string) {
 	for i := 0; i < 3; i++ {
 		name := fmt.Sprintf("auto%d", i)
 		full := network + "-" + name
-		docker(t, "run", "-d", "--name", full, "--network", network, "--network-alias", name, "-p", "127.0.0.1::2379", "gcr.io/etcd-development/etcd:v3.5.17", "/usr/local/bin/etcd", "--name", name, "--listen-client-urls", "http://0.0.0.0:2379", "--advertise-client-urls", "http://"+name+":2379", "--listen-peer-urls", "http://0.0.0.0:2380", "--initial-advertise-peer-urls", "http://"+name+":2380", "--initial-cluster", cluster, "--initial-cluster-token", network, "--data-dir", "/tmp/etcd", "--auto-compaction-mode", "periodic", "--auto-compaction-retention", "2s")
+		docker(t, "run", "-d", "--name", full, "--network", network, "--network-alias", name, "-p", "127.0.0.1::2379", "gcr.io/etcd-development/etcd:v3.5.17", "/usr/local/bin/etcd", "--name", name, "--listen-client-urls", "http://0.0.0.0:2379", "--advertise-client-urls", "http://"+name+":2379", "--listen-peer-urls", "http://0.0.0.0:2380", "--initial-advertise-peer-urls", "http://"+name+":2380", "--initial-cluster", cluster, "--initial-cluster-token", network, "--data-dir", "/tmp/etcd", "--auto-compaction-mode", mode, "--auto-compaction-retention", retention)
 		t.Cleanup(func() {
 			if t.Failed() {
 				out, _ := exec.Command("docker", "logs", "--tail", "80", full).CombinedOutput()
@@ -139,7 +139,7 @@ func historyCompacted(client *http.Client, endpoint, key string, revision int64)
 }
 
 func testEtcdAutomaticCompaction(t *testing.T, base device.DeviceIdentity) {
-	members, endpoints := startAutoCompactionEtcd(t)
+	members, endpoints := startAutoCompactionEtcd(t, "periodic", "2s")
 	for _, count := range []int{1, 3} {
 		t.Run(fmt.Sprintf("endpoints-%d", count), func(t *testing.T) {
 			ctx := context.Background()

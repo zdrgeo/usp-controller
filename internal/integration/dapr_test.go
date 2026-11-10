@@ -77,6 +77,9 @@ func TestLiveDapr(t *testing.T) {
 	if os.Getenv("USP_TEST_DAPR") != "1" {
 		t.Skip("set USP_TEST_DAPR=1 to run isolated live Dapr tests")
 	}
+	// Independent networks allow the real five-minute revision compactor drill
+	// to run alongside this fixture without extending the suite by ten minutes.
+	t.Parallel()
 	docker(t, "info", "--format", "{{.ServerVersion}}")
 	network := fmt.Sprintf("usp-dapr-test-%d", time.Now().UnixNano())
 	docker(t, "network", "create", network)

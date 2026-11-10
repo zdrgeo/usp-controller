@@ -20,10 +20,10 @@ production configuration unchanged. It does not connect to MQTT or real devices.
 Start Docker Desktop (macOS) or Docker Engine (Linux), then run from the repository:
 
 ```sh
-USP_TEST_DAPR=1 go test -race -count=1 -v -timeout=10m ./internal/integration
+USP_TEST_DAPR=1 go test -race -count=1 -v -parallel=2 -timeout=20m ./internal/integration
 ```
 
-The normal `go test ./...` run skips this test. Explicit opt-in fails if Docker or
+The normal `go test ./...` run skips the live tests. Explicit opt-in fails if Docker or
 its dependencies are unavailable; it does not silently substitute mocks. The first
 run downloads the versioned `daprio/daprd`, `daprio/placement`, `daprio/scheduler`
 `redis:7.4.2-alpine` and `gcr.io/etcd-development/etcd:v3.5.17` images, plus the packet-test helper described below. The Docker daemon must be local: the test uses bind
@@ -31,9 +31,12 @@ mounts and callbacks to the host. Linux requires `host-gateway` support and a
 firewall that permits container-to-host callbacks. macOS Docker Desktop was tested;
 Linux routing is supported by the fixture but has not been qualified here.
 
-Each run creates a uniquely named private Docker network, eight disposable
+The main fixture creates a uniquely named private Docker network, eight disposable
 containers, temporary component files, per-host TCP fault proxies and two
-independent fleet directories.
+independent fleet directories. Compaction and restore cases create additional
+isolated clusters. The revision-count fixture runs alongside the main fixture;
+`-parallel=2` permits their independent real-clock schedules to overlap. Its two
+five-minute scheduler checks account for roughly ten minutes of wall time.
 Sidecar HTTP ports are dynamically assigned and published only on loopback.
 Callback listeners bind a random host port on all interfaces so containers can
 reach them. They require a fixed **test-only** callback token; use this fixture
@@ -655,7 +658,7 @@ verifies the recovered twin and all earlier receipts after each cycle. Server
 logs must also contain an automatic periodic compaction completion.
 
 This qualifies repeated periodic retention expiry and application recovery on a
-local cluster. Revision-count automatic compaction, leader changes or network
+local cluster. Revision-count retention has separate coverage below. Leader changes or network
 faults during automatic compaction, defragmentation, disk pressure and production
 retention sizing remain outside these cases. Existing tests cover network and
 leader failures separately. Production code and configuration are unchanged;
@@ -667,3 +670,53 @@ suite passed. The focused automatic compaction run completed in 41.076 seconds;
 the full live suite completed in 671.735 seconds, including both endpoint
 configurations with two retention cycles each and the existing network, restart,
 manual compaction, backup and restore checks.
+
+
+## Live etcd revision-count automatic compaction and recovery
+
+`TestLiveEtcdRevisionCompaction` runs a separate three-member etcd 3.5.17 cluster
+with `--auto-compaction-mode revision --auto-compaction-retention 8`. It uses the
+unmodified server's real clock and fixed five-minute scheduler interval, verified
+against the [pinned revision compactor source](https://github.com/etcd-io/etcd/blob/v3.5.17/server/etcdserver/api/v3compactor/revision.go).
+No manual compact request, accelerated clock or altered server image is used.
+This top-level fixture and `TestLiveDapr` run in parallel on independent networks;
+use the full-suite command above with `-parallel=2 -timeout=20m`.
+
+Single- and three-endpoint clients hold independent Device actor saves after
+loading their snapshots, before the backend starts its HTTP timeout. Only writes
+to an unrelated clock key advance the global revision. The first scheduler check
+compacts older history while both captured read revisions remain within the
+configured eight-revision window. Historical range requests on every member must
+confirm that old history was removed and both actor revisions remain readable,
+despite their age. Independent exports require unchanged device bytes, receipts
+and ETags, and the held actors must have sent no new transaction.
+
+The test then advances the global revision far enough to move the next compaction
+target beyond both captured revisions. At the second real scheduler check, every
+member must reject those historical revisions while still serving a recent
+revision inside the retention window. Releasing the held saves must produce
+exactly one compacted-history rejection each, with unchanged snapshot bytes and
+ETags. Cached writers are rejected, and an invalidated backend cannot reuse its
+loaded version or replay a transaction.
+
+The same actors then reload and commit their stable request IDs once. Duplicates
+must return stored receipts without another transaction or ETag change. Fresh
+actors verify the recovered twins and both baseline and recovery receipts. Server
+logs independently require successful revision-compactor completions with the
+configured retention and both exact expected compaction targets.
+
+This qualifies count-based retention across two scheduler checks, including a
+within-window control and an expiry/recovery transition. It does not inject leader
+changes, network faults or disk pressure during compaction. Eight-revision
+retention is a test setting, not a production recommendation. The main fixture's
+retention settings and production code/configuration remain unchanged; legacy
+remains the default.
+
+Validated on 2026-11-10: `go test -race ./...`, `go vet ./...`, and
+`USP_TEST_DAPR=1 go test -race -count=1 -v -parallel=2 -timeout=20m ./internal/integration`
+passed. The real revision-count fixture completed in 603.03 seconds; the full live
+suite completed in 674.475 seconds. Both endpoint configurations retained their
+reads through target 2, expired at target 6, recovered idempotently, and retained
+their baseline/recovery receipts. Existing periodic/manual compaction, network,
+restart, backup and restore cases also passed with the independent fixtures
+running concurrently.
