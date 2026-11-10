@@ -38,6 +38,17 @@ func TestActorCanaryExplicitAllowlist(t *testing.T) {
 	if err := base.Validate(); err != nil {
 		t.Fatal(err)
 	}
+	base.ActorCanary.DispatchWithEventBacklog = true
+	if err := base.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	disabled := *base.ActorCanary
+	disabled.Enabled = false
+	invalid := base
+	invalid.ActorCanary = &disabled
+	if err := invalid.Validate(); err == nil {
+		t.Fatal("backlog dispatch accepted without actor mode")
+	}
 	base.ActorCanary.CompletionReserve = &deviceactor.CompletionReserve{StateBytes: 65536, Notifications: 1}
 	if err := base.Validate(); err != nil {
 		t.Fatal(err)

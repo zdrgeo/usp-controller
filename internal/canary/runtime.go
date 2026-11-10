@@ -118,6 +118,7 @@ func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, 
 		identity := device.DeviceIdentity{Tenant: a.Tenant, ControllerID: cfg.EndpointID, AgentID: id}
 		rt.Devices[id] = identity
 		opts := deviceactor.DefaultOptions()
+		opts.DispatchWithEventBacklog = a.DispatchWithEventBacklog
 		opts.Policy = a.Twin
 		opts.AttemptBudget = rt.AttemptBudget
 		opts.AttemptRateBudget = rt.AttemptRateBudget

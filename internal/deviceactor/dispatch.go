@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -54,9 +55,9 @@ func transition(c *storedCommand, state device.CommandState, reason string) erro
 	return nil
 }
 
-// Tick performs at most one publication. Durable attempting is never replayed,
+// Tick performs at most one command publication. Durable attempting is never replayed,
 // including when a previous save or transport result was ambiguous.
-func (a *Actor) Tick(ctx context.Context) error {
+func (a *Actor) Tick(ctx context.Context) (resultErr error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	s, err := a.load(ctx)
@@ -95,8 +96,14 @@ func (a *Actor) Tick(ctx context.Context) error {
 			return err
 		}
 	}
-	if err = a.exportOne(ctx, s); err != nil {
-		return err
+	handoffFailed, exportErr := a.exportOne(ctx, s)
+	if exportErr != nil {
+		if !a.opts.DispatchWithEventBacklog || !handoffFailed || ctx.Err() != nil {
+			return exportErr
+		}
+		// Publish failure leaves s unchanged. Keep the event and preserve the
+		// export error even if command work succeeds or adds another failure.
+		defer func() { resultErr = errors.Join(exportErr, resultErr) }()
 	}
 	if a.transport == nil || s.Execution.Paused {
 		return nil

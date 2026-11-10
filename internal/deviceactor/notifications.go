@@ -196,20 +196,22 @@ func (a *Actor) HandleNotify(ctx context.Context, r device.DeviceNotification) (
 
 // One bounded export per reminder, even when command dispatch is blocked/offline.
 // A lost publication or removal acknowledgement can duplicate this stable event.
-func (a *Actor) exportOne(ctx context.Context, s *snapshot) error {
+// handoffFailed is true only when Publish failed before any local state mutation;
+// a failed removal commit must never permit dispatch from the mutated snapshot.
+func (a *Actor) exportOne(ctx context.Context, s *snapshot) (handoffFailed bool, err error) {
 	if a.publisher == nil || len(s.Outbox) == 0 {
-		return nil
+		return false, nil
 	}
 	e := s.Outbox[0]
 	msg := new(usp.Msg)
 	if err := proto.Unmarshal(e.Payload, msg); err != nil {
-		return err
+		return false, err
 	}
 	publishCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if err := a.publisher.Publish(publishCtx, device.DeviceEvent{Identity: a.id, Epoch: e.Epoch, Sequence: e.Sequence, SchemaVersion: "1", ReceivedAt: e.ReceivedAt, Message: msg}); err != nil {
-		return err
+		return true, err
 	}
 	s.Outbox = s.Outbox[1:]
-	return a.save(ctx, s)
+	return false, a.save(ctx, s)
 }

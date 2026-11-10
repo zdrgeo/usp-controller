@@ -39,6 +39,7 @@ type Backend interface {
 }
 
 type Options struct {
+	DispatchWithEventBacklog                          bool
 	AttemptRateBudget                                 *device.AttemptRateBudget
 	AttemptBudget                                     *device.AttemptBudget
 	CompletionReserve                                 CompletionReserve

@@ -644,3 +644,13 @@ with concurrent-attempt permits, leaves intent queued on denial and never refund
 a reservation after failed or uncertain work. Passive metrics expose the
 configured rate/burst and reservation/denial counts. No distributed quota, worker
 queue or retry is added. Legacy remains the default and schema 8 is unchanged.
+
+
+### Event handoff and command scheduling isolation
+
+An optional [backlog dispatch policy](device-outbox-dispatch.md) allows command
+progress after a failed event handoff while retaining the same pending event and
+reporting its error. Failed or ambiguous event-removal commits still stop dispatch
+from the locally mutated snapshot. Existing execution gates, bounded capacity and
+no-replay behavior remain in force. No event loss or background worker is added;
+legacy remains the default and schema 8 is unchanged.

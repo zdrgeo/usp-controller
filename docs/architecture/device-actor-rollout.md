@@ -272,3 +272,12 @@ zero/omission leaves rate limiting disabled. Denied turns retain queued intent
 without beginning a command, and metrics expose local reservations and denials.
 This is not a distributed site quota. Legacy remains the default; schema 8 and
 storage fencing protocols are unchanged.
+
+
+## Optional command progress during event handoff failures
+
+The actor canary can enable [dispatch with an event backlog](device-outbox-dispatch.md)
+to avoid coupling command availability to the event destination. Pending events
+remain durable and errors remain visible. Storage/ambiguous removal errors still
+stop the turn, and hard capacity remains a backpressure boundary. The option is
+disabled by default; legacy and snapshot schema 8 are unchanged.

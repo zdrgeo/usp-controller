@@ -104,3 +104,9 @@ label-free series for refill rate, burst capacity, granted reservations and
 denied turns. These are passive local observations; scraping does not refill or
 consume tokens. Combined with the three optional concurrency series, this adds
 at most seven local series beyond the bounded operation families.
+
+
+With [backlog dispatch](device-outbox-dispatch.md) enabled, a Tick may record an
+event handoff failure and a command transport attempt in the same turn. Tick still
+reports the handoff error, even when command work succeeds. Its error count must
+not be interpreted as a count of commands that were not sent.
