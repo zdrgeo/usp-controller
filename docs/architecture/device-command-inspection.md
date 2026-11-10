@@ -41,7 +41,9 @@ An empty result is `commands:[]` and `total:0`.
 New attempts also expose `attempted_at` and `attempt_sequence` in summaries and
 single-command reads. Migrated attempts omit these fields when provenance is
 unknown. These fields participate in the command-view fingerprint. See
-[Get observations](device-get-observations.md) for schema 6 and timing semantics.
+[Get observations](device-get-observations.md) for attempt timing semantics. Generated bootstrap reads expose
+`observation_revision`, distinct from generated writes' `desired_revision`; see
+[observation reads](device-observation-reads.md) for schema 7 and rollout.
 
 Summaries omit USP request/result/completion payloads, protocol message IDs,
 operation keys, free-form reasons and acknowledgement audit text. Request IDs are

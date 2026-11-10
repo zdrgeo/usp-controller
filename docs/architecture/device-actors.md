@@ -614,3 +614,13 @@ sequence with the begin commit. Schema 6 preserves older snapshots without
 inventing provenance. Projection requires reviewed paths, valid values, the latest
 attempt and a fresh read window; command evidence and optional twin updates share
 one commit. Legacy remains the default and projection remains disabled by default.
+
+
+### Bounded observation read implementation
+
+A separately opt-in [bootstrap read planner](device-observation-reads.md) can now
+queue one scoped Get per desired revision when reconciliation lacks observations.
+It shares dispatch safety gates and rechecks queued intent against policy and
+desired state. Reads are not retried automatically, and Set responses do not
+verify convergence. Schema 7 preserves generated-read provenance while rejecting
+older writers; legacy remains the default.

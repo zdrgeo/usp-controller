@@ -115,11 +115,19 @@ func (a *Actor) planReconciliation(s *snapshot) (*usp.Request, string) {
 	return &usp.Request{ReqType: &usp.Request_Set{Set: set}}, "eligible"
 }
 func (a *Actor) scheduleReconciliation(ctx context.Context, s *snapshot) error {
-	req, _ := a.planReconciliation(s)
+	req, reason := a.planReconciliation(s)
+	observation := false
+	if req == nil && reason == "waiting_observation" {
+		req, _ = a.planObservation(s)
+		observation = req != nil
+	}
 	if req == nil {
 		return nil
 	}
 	id := device.RequestID(fmt.Sprintf("reconcile-%d", s.DesiredRevision))
+	if observation {
+		id = device.RequestID(fmt.Sprintf("reconcile-observe-%d", s.DesiredRevision))
+	}
 	if _, exists := s.Receipts[id]; exists {
 		return ErrConflict
 	}
@@ -135,7 +143,12 @@ func (a *Actor) scheduleReconciliation(ctx context.Context, s *snapshot) error {
 	if err != nil {
 		return err
 	}
-	s.Commands[id] = storedCommand{DesiredRevision: s.DesiredRevision, Receipt: device.CommandReceipt{ID: id, Revision: 1, State: device.CommandQueued}, Payload: payload, Deadline: deadline}
+	c := storedCommand{DesiredRevision: s.DesiredRevision, Receipt: device.CommandReceipt{ID: id, Revision: 1, State: device.CommandQueued}, Payload: payload, Deadline: deadline}
+	if observation {
+		c.DesiredRevision = 0
+		c.ObservationRevision = s.DesiredRevision
+	}
+	s.Commands[id] = c
 	s.Receipts[id] = receipt{Kind: "command", Fingerprint: fp, Revision: 1}
 	s.Queue = append(s.Queue, id)
 	return a.saveOrdinary(ctx, s)
@@ -173,6 +186,9 @@ func (a *Actor) GetStatus(ctx context.Context) (Status, error) {
 		return Status{}, err
 	}
 	_, reason := a.planReconciliation(s)
+	if reason == "waiting_observation" {
+		_, reason = a.planObservation(s)
+	}
 	b, err := json.Marshal(s)
 	if err != nil {
 		return Status{}, err

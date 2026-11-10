@@ -17,6 +17,7 @@ type CommandSummary struct {
 	Revision            uint64       `json:"revision"`
 	State               CommandState `json:"state"`
 	Deadline            time.Time    `json:"deadline"`
+	ObservationRevision uint64       `json:"observation_revision,omitempty"`
 	DesiredRevision     uint64       `json:"desired_revision,omitempty"`
 	QueuePosition       int          `json:"queue_position,omitempty"` // one-based in persisted FIFO
 	BlockingUnknown     bool         `json:"blocking_unknown"`

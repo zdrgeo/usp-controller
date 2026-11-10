@@ -148,7 +148,8 @@ type DeviceCommand struct {
 	AttemptSequence        uint64
 	UnknownAcknowledgement *UnknownAcknowledgement
 
-	DesiredRevision uint64
+	ObservationRevision uint64
+	DesiredRevision     uint64
 	CommandReceipt
 	Request                            *usp.Request
 	Deadline                           time.Time

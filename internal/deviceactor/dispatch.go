@@ -29,7 +29,7 @@ func NewExecuting(id device.DeviceIdentity, b Backend, o Options, t device.Devic
 	return a, nil
 }
 func commandView(c storedCommand, req *usp.Request) (device.DeviceCommand, error) {
-	out := device.DeviceCommand{AttemptedAt: c.AttemptedAt, AttemptSequence: c.AttemptSequence, UnknownAcknowledgement: c.UnknownAcknowledgement, DesiredRevision: c.DesiredRevision, CommandReceipt: c.Receipt, Request: req, Deadline: c.Deadline, Reason: c.Reason, MessageID: c.MessageID, AttemptID: c.MessageID, OperationKey: c.OperationKey}
+	out := device.DeviceCommand{AttemptedAt: c.AttemptedAt, AttemptSequence: c.AttemptSequence, UnknownAcknowledgement: c.UnknownAcknowledgement, ObservationRevision: c.ObservationRevision, DesiredRevision: c.DesiredRevision, CommandReceipt: c.Receipt, Request: req, Deadline: c.Deadline, Reason: c.Reason, MessageID: c.MessageID, AttemptID: c.MessageID, OperationKey: c.OperationKey}
 	if len(c.Result) > 0 {
 		out.Result = new(usp.Msg)
 		if err := proto.Unmarshal(c.Result, out.Result); err != nil {
@@ -67,7 +67,7 @@ func (a *Actor) Tick(ctx context.Context) error {
 	changed := false
 	for id, c := range s.Commands {
 		state := c.Receipt.State
-		if state == device.CommandQueued && c.DesiredRevision != 0 && !a.currentReconciliation(s, c) {
+		if state == device.CommandQueued && (c.DesiredRevision != 0 && !a.currentReconciliation(s, c) || c.ObservationRevision != 0 && !a.currentObservation(s, c)) {
 			if err = transition(&c, device.CommandCancelled, "desired revision, policy or observation no longer eligible"); err != nil {
 				return err
 			}
@@ -121,7 +121,7 @@ func (a *Actor) Tick(ctx context.Context) error {
 	c := s.Commands[id]
 	// Export and queue persistence may take time. Recheck observation eligibility
 	// immediately before beginning a generated write's uncertainty boundary.
-	if c.DesiredRevision != 0 && !a.currentReconciliation(s, c) {
+	if c.DesiredRevision != 0 && !a.currentReconciliation(s, c) || c.ObservationRevision != 0 && !a.currentObservation(s, c) {
 		if err = transition(&c, device.CommandCancelled, "observation no longer eligible before attempt"); err != nil {
 			return err
 		}

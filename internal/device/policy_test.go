@@ -7,6 +7,18 @@ func TestTwinPolicyTypesAndConcretePaths(t *testing.T) {
 	if err := p.Validate(); err != nil {
 		t.Fatal(err)
 	}
+	p.ReadBeforeReconcile = true
+	if p.Validate() == nil {
+		t.Fatal("read planning without observation projection/reconciliation")
+	}
+	p.Reconcile = true
+	if p.Validate() == nil {
+		t.Fatal("read planning without projection")
+	}
+	p.ObserveGetResponses = true
+	if err := p.Validate(); err != nil {
+		t.Fatal(err)
+	}
 	if !p.Allows("Device.Test.Value", ParameterValue{Type: "boolean", Value: "true"}, true) || p.Allows("Device.Test.Value", ParameterValue{Type: "boolean", Value: "not-bool"}, true) {
 		t.Fatal("boolean validation")
 	}

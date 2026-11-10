@@ -50,13 +50,14 @@ does not backfill skipped values; obtain a new read instead.
 
 ## Schema and rollout
 
-Writers now use schema 6. Schemas 1–5 load and upgrade on the next save without
+Attempt provenance introduced schema 6; current writers use
+[schema 7](device-observation-reads.md). Schemas 1–6 load and upgrade on the next save without
 inventing timestamps or sequences for historical attempts. Those attempts can
 still settle and retain evidence, but cannot refresh the twin. New attempt
 provenance is validated for sequence uniqueness, complete retained history and
 compatible command state. There is no automatic history pruning.
 
-Older binaries reject schema 6. Drain senders and roll forward or use a reviewed
+Older binaries reject schema 7. Drain senders and roll forward or use a reviewed
 state migration; do not roll an older writer over upgraded state. The schema
 change applies to actor saves even when projection is disabled. No storage
 backend, fencing or infrastructure recovery protocol changes in this slice.
@@ -66,3 +67,6 @@ checks cover scope/type/depth filtering, stale and conflicting observations,
 legacy provenance, partial responses, failed and ambiguous commits, capacity
 fallback with one save, duplicate stability and deadline expiry after export.
 The long infrastructure fault suite was not rerun for this actor-local change.
+
+[Bounded automatic observation reads](device-observation-reads.md) are now a separate
+opt-in opportunity to acquire missing desired-path observations before reconciliation.
