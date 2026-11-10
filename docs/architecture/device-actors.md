@@ -593,3 +593,14 @@ page rather than silently skipping work. Summaries disclose queue position and
 uncertainty/evidence flags without copying USP payloads or free-form reasons.
 Reads perform no maintenance or dispatch. This supports operator discovery before
 existing cancel/acknowledgement workflows, while legacy remains the default.
+
+
+### Local execution budget implementation
+
+The opt-in runtime now supports a [shared local attempt budget](device-actor-attempt-budget.md)
+across its actor inventory. Nonblocking permits precede durable attempting and
+cover begin/publish/result work; contention leaves commands queued and cleanup
+releases permits on all exit paths. Passive local metrics expose occupancy and
+denials without actor fanout. This adds no shared command claiming, distributed
+lease or retry policy. Site-wide rate/fairness budgets remain separate work;
+legacy remains the default and schema 5 is unchanged.

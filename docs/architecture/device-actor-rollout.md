@@ -250,3 +250,15 @@ lexical pagination order, and rejects continuations when command/control state
 changes. Operator mutations still need their existing expected revisions; reads
 never alter deadlines or trigger execution. This is neither a global command
 index nor a retention mechanism. Legacy remains the default.
+
+
+### Local attempt budget continuation
+
+An optional [host-local attempt concurrency budget](device-actor-attempt-budget.md)
+now limits simultaneous begin/publish/result sections across a runtime's actors.
+It is acquired before durable attempting, so contention leaves intent queued
+without publication or a synthetic unknown outcome. Per-device guards and
+maintenance remain intact; local gauges/denial counts expose contention. This is
+one resource bound for reconnect bursts, not a global site rate or outstanding
+response budget. Zero/omission preserves existing actor behavior. No schema change
+is required and legacy remains the default.

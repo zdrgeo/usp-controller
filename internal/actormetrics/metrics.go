@@ -4,6 +4,7 @@ package actormetrics
 
 import (
 	"crypto/subtle"
+	"example.com/usp-controller/internal/device"
 	"fmt"
 	"net/http"
 	"sort"
@@ -21,8 +22,9 @@ type sample struct {
 	buckets [len(bounds)]uint64
 }
 type Registry struct {
-	mu      sync.Mutex
-	samples map[key]sample
+	attemptBudget *device.AttemptBudget
+	mu            sync.Mutex
+	samples       map[key]sample
 }
 
 func New() *Registry { return &Registry{samples: map[key]sample{}} }
@@ -99,6 +101,7 @@ func (m *Registry) Handler(next http.Handler, token string, site ...string) http
 			}
 		}
 		m.mu.Lock()
+		budget := m.attemptBudget
 		values := make(map[key]sample, len(m.samples))
 		for k, v := range m.samples {
 			values[k] = v
@@ -134,9 +137,25 @@ func (m *Registry) Handler(next http.Handler, token string, site ...string) http
 			fmt.Fprintf(&body, "usp_device_operation_duration_seconds_sum{boundary=%q,operation=%q,result=%q} %g\n", k.boundary, k.operation, k.result, v.seconds)
 			fmt.Fprintf(&body, "usp_device_operation_duration_seconds_count{boundary=%q,operation=%q,result=%q} %d\n", k.boundary, k.operation, k.result, v.count)
 		}
+		if budget != nil {
+			body.WriteString("# HELP usp_device_attempt_slots_limit Local maximum simultaneous attempt sections.\n# TYPE usp_device_attempt_slots_limit gauge\n")
+			fmt.Fprintf(&body, "usp_device_attempt_slots_limit %d\n", budget.Limit())
+			body.WriteString("# HELP usp_device_attempt_slots_in_use Local attempt sections holding a permit.\n# TYPE usp_device_attempt_slots_in_use gauge\n")
+			fmt.Fprintf(&body, "usp_device_attempt_slots_in_use %d\n", budget.InUse())
+			body.WriteString("# HELP usp_device_attempt_budget_denied_total Eligible turns left queued because the local budget was full.\n# TYPE usp_device_attempt_budget_denied_total counter\n")
+			fmt.Fprintf(&body, "usp_device_attempt_budget_denied_total %d\n", budget.Denied())
+		}
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		_, _ = w.Write([]byte(body.String()))
 	})
 	return mux
+}
+
+// SetAttemptBudget attaches only concrete local counters; scraping never invokes
+// an external observer or actor. Replacing a budget resets its local readings.
+func (m *Registry) SetAttemptBudget(budget *device.AttemptBudget) {
+	m.mu.Lock()
+	m.attemptBudget = budget
+	m.mu.Unlock()
 }

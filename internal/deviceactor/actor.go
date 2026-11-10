@@ -39,6 +39,7 @@ type Backend interface {
 }
 
 type Options struct {
+	AttemptBudget                                     *device.AttemptBudget
 	CompletionReserve                                 CompletionReserve
 	Policy                                            *device.TwinPolicy
 	MaxBytes, MaxReceipts, MaxCommands, MaxParameters int
@@ -61,6 +62,9 @@ type Actor struct {
 
 func New(id device.DeviceIdentity, backend Backend, opts Options) (*Actor, error) {
 	if id.Tenant == "" || id.ControllerID == "" || id.AgentID == "" || backend == nil || opts.Now == nil || opts.MaxBytes <= 0 || opts.MaxReceipts <= 0 || opts.MaxCommands <= 0 || opts.MaxParameters <= 0 || opts.Freshness <= 0 {
+		return nil, ErrInvalid
+	}
+	if opts.AttemptBudget != nil && (opts.AttemptBudget.Limit() < 1 || opts.AttemptBudget.Limit() > device.MaxAttemptConcurrency) {
 		return nil, ErrInvalid
 	}
 	if err := opts.CompletionReserve.Validate(opts.MaxBytes, opts.MaxCommands, opts.MaxReceipts); err != nil {

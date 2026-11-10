@@ -145,6 +145,16 @@ func (a *Actor) Tick(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if budget := a.opts.AttemptBudget; budget != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		release, ok := budget.TryAcquire()
+		if !ok {
+			return nil
+		} // Leave intent queued; a later reminder can try again.
+		defer release() // Includes begin/result commits, errors and panics.
+	}
 	random := make([]byte, 16)
 	if _, err = rand.Read(random); err != nil {
 		return err

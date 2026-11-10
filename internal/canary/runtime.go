@@ -48,6 +48,7 @@ func (t transport) Publish(ctx context.Context, id device.DeviceIdentity, attemp
 }
 
 type Runtime struct {
+	AttemptBudget *device.AttemptBudget
 	Metrics       *actormetrics.Registry
 	Devices       map[string]device.DeviceIdentity
 	Client        *deviceactor.Client
@@ -97,12 +98,20 @@ func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, 
 			return fail(err)
 		}
 	}
+	if a.MaxConcurrentAttempts > 0 {
+		rt.AttemptBudget, err = device.NewAttemptBudget(a.MaxConcurrentAttempts)
+		if err != nil {
+			return fail(err)
+		}
+		rt.Metrics.SetAttemptBudget(rt.AttemptBudget)
+	}
 	var actors []*deviceactor.Actor
 	for _, id := range a.Devices {
 		identity := device.DeviceIdentity{Tenant: a.Tenant, ControllerID: cfg.EndpointID, AgentID: id}
 		rt.Devices[id] = identity
 		opts := deviceactor.DefaultOptions()
 		opts.Policy = a.Twin
+		opts.AttemptBudget = rt.AttemptBudget
 		if a.CompletionReserve != nil {
 			opts.CompletionReserve = *a.CompletionReserve
 		}

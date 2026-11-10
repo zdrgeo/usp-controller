@@ -444,3 +444,14 @@ free-form reasons are returned, and listing performs no maintenance or dispatch.
 Concurrent command/control changes return 409 and require a fresh first page.
 See [command inspection semantics](device-command-inspection.md). Legacy remains
 the default and snapshot schema 5 is unchanged.
+
+
+## Optional local attempt concurrency
+
+`actor_canary.max_concurrent_attempts` now optionally bounds begin/publish/result
+sections across the local runtime's actors. A full budget leaves commands queued
+without an attempt identity or publication; permits release even on failure or
+panic. The same budget is shared through runtime wiring and has label-free local
+metrics. See [scope and safety semantics](device-actor-attempt-budget.md). Zero or
+omission preserves the previous actor behavior. This is not a cluster-wide quota,
+response-in-flight cap or external-send fence. Legacy remains the default.

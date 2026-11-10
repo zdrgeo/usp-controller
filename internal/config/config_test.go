@@ -42,7 +42,7 @@ func TestActorCanaryExplicitAllowlist(t *testing.T) {
 	if err := base.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	for _, mutate := range []func(*ActorCanary){func(a *ActorCanary) { a.CompletionReserve = &deviceactor.CompletionReserve{StateBytes: 1 << 20} }, func(a *ActorCanary) { a.CompletionReserve = &deviceactor.CompletionReserve{Notifications: 64} }, func(a *ActorCanary) { a.EventPubsub = "" }, func(a *ActorCanary) { a.EventTopic = "../escape" }, func(a *ActorCanary) { a.Devices = nil }, func(a *ActorCanary) { a.Devices = []string{"other"} }, func(a *ActorCanary) { a.Devices = []string{"device", "device"} }, func(a *ActorCanary) { a.CallbackListen = "0.0.0.0:8081" }, func(a *ActorCanary) { a.DaprURL = "http://remote:3500" }, func(a *ActorCanary) { a.LockPath = "" }} {
+	for _, mutate := range []func(*ActorCanary){func(a *ActorCanary) { a.MaxConcurrentAttempts = -1 }, func(a *ActorCanary) { a.MaxConcurrentAttempts = 257 }, func(a *ActorCanary) { a.CompletionReserve = &deviceactor.CompletionReserve{StateBytes: 1 << 20} }, func(a *ActorCanary) { a.CompletionReserve = &deviceactor.CompletionReserve{Notifications: 64} }, func(a *ActorCanary) { a.EventPubsub = "" }, func(a *ActorCanary) { a.EventTopic = "../escape" }, func(a *ActorCanary) { a.Devices = nil }, func(a *ActorCanary) { a.Devices = []string{"other"} }, func(a *ActorCanary) { a.Devices = []string{"device", "device"} }, func(a *ActorCanary) { a.CallbackListen = "0.0.0.0:8081" }, func(a *ActorCanary) { a.DaprURL = "http://remote:3500" }, func(a *ActorCanary) { a.LockPath = "" }} {
 		a := *base.ActorCanary
 		mutate(&a)
 		c := base

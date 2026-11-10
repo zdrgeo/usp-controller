@@ -53,7 +53,7 @@ remain authoritative.
 
 Operations and outcomes are allowlisted before allocating a series. The current
 registry can hold at most 146 operation/result combinations (1460 Prometheus
-series including histogram buckets/sum/count). Unknown method/outcome strings
+series in the operation families including histogram buckets/sum/count). Unknown method/outcome strings
 are ignored rather than added as labels. Labels never contain device, controller,
 tenant, request, message or operation IDs; error text, reasons, paths, parameter
 values, event content, credentials and MQTT topics are not exported. Site and host
@@ -73,6 +73,17 @@ broker consumer backlog, data retention, distributed tracing or real-device
 convergence. Combine it with dependency monitoring and eventually refreshed fleet
 status; never use metrics to claim commands or decide whether to replay an action.
 No monitoring service or alert policy is provisioned by this change.
+
+## Optional local attempt-budget metrics
+
+A configured [host-local attempt budget](device-actor-attempt-budget.md) adds
+label-free `usp_device_attempt_slots_limit` and `usp_device_attempt_slots_in_use`
+gauges plus `usp_device_attempt_budget_denied_total`. These read concrete local
+counters, not actor state or an external observer. No extra per-device series is
+created. They describe local concurrency sections rather than outstanding USP
+operations or cluster-wide throughput. A full-budget Tick can return `ok` without
+publication; the separate denial counter identifies that condition. These three
+series are absent when the budget is omitted.
 
 ## Validation
 
