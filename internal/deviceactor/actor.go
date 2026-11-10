@@ -39,6 +39,7 @@ type Backend interface {
 }
 
 type Options struct {
+	CompletionReserve                                 CompletionReserve
 	Policy                                            *device.TwinPolicy
 	MaxBytes, MaxReceipts, MaxCommands, MaxParameters int
 	Freshness                                         time.Duration
@@ -61,6 +62,9 @@ type Actor struct {
 func New(id device.DeviceIdentity, backend Backend, opts Options) (*Actor, error) {
 	if id.Tenant == "" || id.ControllerID == "" || id.AgentID == "" || backend == nil || opts.Now == nil || opts.MaxBytes <= 0 || opts.MaxReceipts <= 0 || opts.MaxCommands <= 0 || opts.MaxParameters <= 0 || opts.Freshness <= 0 {
 		return nil, ErrInvalid
+	}
+	if err := opts.CompletionReserve.Validate(opts.MaxBytes, opts.MaxCommands, opts.MaxReceipts); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
 	if opts.Policy != nil {
 		if err := opts.Policy.Validate(); err != nil {
@@ -216,6 +220,9 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 	return s, nil
 }
 func (a *Actor) save(ctx context.Context, s *snapshot) error {
+	return a.saveWithBudget(ctx, s, a.opts.MaxBytes)
+}
+func (a *Actor) saveWithBudget(ctx context.Context, s *snapshot, maxBytes int) error {
 	if err := validateExecution(s, s.Schema); err != nil {
 		return err
 	}
@@ -229,7 +236,7 @@ func (a *Actor) save(ctx context.Context, s *snapshot) error {
 	if err != nil {
 		return err
 	}
-	if len(b) > a.opts.MaxBytes {
+	if len(b) > maxBytes {
 		return ErrCapacity
 	}
 	return a.backend.Save(ctx, b)
@@ -355,7 +362,7 @@ func (a *Actor) SetDesired(ctx context.Context, r device.SetDesiredRequest) (dev
 	if err = a.backend.EnsureReminder(ctx); err != nil {
 		return zero, err
 	}
-	if err = a.save(ctx, s); err != nil {
+	if err = a.saveOrdinary(ctx, s); err != nil {
 		return zero, err
 	}
 	return device.DesiredReceipt{ID: r.ID, Revision: s.DesiredRevision}, nil
@@ -421,7 +428,7 @@ func (a *Actor) Report(ctx context.Context, r ReportRequest) (uint64, error) {
 	if err = a.backend.EnsureReminder(ctx); err != nil {
 		return 0, err
 	}
-	if err = a.save(ctx, s); err != nil {
+	if err = a.saveOrdinary(ctx, s); err != nil {
 		return 0, err
 	}
 	return s.ReportedRevision, nil
@@ -483,7 +490,7 @@ func (a *Actor) EnqueueCommand(ctx context.Context, r device.CommandRequest) (de
 	if err = a.backend.EnsureReminder(ctx); err != nil {
 		return zero, err
 	}
-	if err = a.save(ctx, s); err != nil {
+	if err = a.saveOrdinary(ctx, s); err != nil {
 		return zero, err
 	}
 	return result, nil

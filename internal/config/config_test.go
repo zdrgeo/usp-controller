@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"example.com/usp-controller/internal/deviceactor"
+	"testing"
+)
 
 func TestRejectInsecureAndAmbiguousTopics(t *testing.T) {
 	c := Config{EndpointID: "controller", ClientID: "client", Broker: "tls://localhost:8883", Agents: map[string]Agent{"agent": {Topic: "agent", Inbox: "controller/agent"}}, JournalPath: "events", JournalMaxBytes: 100, RequestTimeoutSeconds: 30, MaxPending: 10, QoS: 1}
@@ -35,7 +38,11 @@ func TestActorCanaryExplicitAllowlist(t *testing.T) {
 	if err := base.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	for _, mutate := range []func(*ActorCanary){func(a *ActorCanary) { a.EventPubsub = "" }, func(a *ActorCanary) { a.EventTopic = "../escape" }, func(a *ActorCanary) { a.Devices = nil }, func(a *ActorCanary) { a.Devices = []string{"other"} }, func(a *ActorCanary) { a.Devices = []string{"device", "device"} }, func(a *ActorCanary) { a.CallbackListen = "0.0.0.0:8081" }, func(a *ActorCanary) { a.DaprURL = "http://remote:3500" }, func(a *ActorCanary) { a.LockPath = "" }} {
+	base.ActorCanary.CompletionReserve = &deviceactor.CompletionReserve{StateBytes: 65536, Notifications: 1}
+	if err := base.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutate := range []func(*ActorCanary){func(a *ActorCanary) { a.CompletionReserve = &deviceactor.CompletionReserve{StateBytes: 1 << 20} }, func(a *ActorCanary) { a.CompletionReserve = &deviceactor.CompletionReserve{Notifications: 64} }, func(a *ActorCanary) { a.EventPubsub = "" }, func(a *ActorCanary) { a.EventTopic = "../escape" }, func(a *ActorCanary) { a.Devices = nil }, func(a *ActorCanary) { a.Devices = []string{"other"} }, func(a *ActorCanary) { a.Devices = []string{"device", "device"} }, func(a *ActorCanary) { a.CallbackListen = "0.0.0.0:8081" }, func(a *ActorCanary) { a.DaprURL = "http://remote:3500" }, func(a *ActorCanary) { a.LockPath = "" }} {
 		a := *base.ActorCanary
 		mutate(&a)
 		c := base

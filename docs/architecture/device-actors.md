@@ -570,3 +570,15 @@ with no actor fanout or control side effects. Labels exclude device/request IDs
 and payloads. Publication uncertainty and typed domain failures remain visible,
 without adding retries or treating metrics as durable receipts. Fleet/backlog
 snapshots remain separate and eventually consistent. Legacy remains the default.
+
+
+### Completion capacity implementation
+
+An opt-in [completion reserve](device-actor-capacity.md) separates ordinary
+admission budgets from the existing hard snapshot/inbox/outbox limits. Ordinary
+work cannot consume configured headroom for correlated response/completion
+evidence. The actor refuses a new attempt before publication when its ordinary
+byte budget is exhausted, and refuses new Operate dispatch without a hard
+completion slot. No eviction, new retry, SQL claiming or schema change is added;
+legacy remains the default. Retention and physical snapshot decomposition remain
+separate implementation work.

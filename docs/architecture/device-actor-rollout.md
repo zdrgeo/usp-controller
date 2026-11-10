@@ -228,3 +228,14 @@ and does not hold the recording lock while writing to the client. Typed actor
 conflicts/capacity failures are counted as domain errors even when Dapr's callback
 envelope uses HTTP 200. See [metric semantics and limits](device-actor-metrics.md).
 This adds passive instrumentation; legacy remains the default.
+
+
+### Completion capacity continuation
+
+An optional [completion reserve](device-actor-capacity.md) now protects bounded
+byte/inbox/outbox headroom from ordinary admission and telemetry. The actor checks
+capacity before beginning new attempts, while correlated responses and unresolved
+operation completions can commit within the hard limits. Current reserve values
+are visible through status and fleet rows. This does not prune receipts, replace
+retention planning, or guarantee acceptance of arbitrarily large evidence. Legacy
+remains the default and snapshot schema 5 is unchanged.

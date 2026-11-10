@@ -138,29 +138,31 @@ func (a *Actor) scheduleReconciliation(ctx context.Context, s *snapshot) error {
 	s.Commands[id] = storedCommand{DesiredRevision: s.DesiredRevision, Receipt: device.CommandReceipt{ID: id, Revision: 1, State: device.CommandQueued}, Payload: payload, Deadline: deadline}
 	s.Receipts[id] = receipt{Kind: "command", Fingerprint: fp, Revision: 1}
 	s.Queue = append(s.Queue, id)
-	return a.save(ctx, s)
+	return a.saveOrdinary(ctx, s)
 }
 
 // Status contains no desired/reported values and performs no fleet fanout.
 type Status struct {
-	ExecutionPaused      bool                        `json:"execution_paused"`
-	ExecutionRevision    uint64                      `json:"execution_revision"`
-	Convergence          string                      `json:"convergence"`
-	SiteID               string                      `json:"site_id"`
-	DesiredRevision      uint64                      `json:"desired_revision"`
-	ReportedRevision     uint64                      `json:"reported_revision"`
-	Reconciliation       string                      `json:"reconciliation"`
-	BlockingUnknown      int                         `json:"blocking_unknown"`
-	CommandStates        map[device.CommandState]int `json:"command_states"`
-	PendingEvents        int                         `json:"pending_events"`
-	NotificationReceipts int                         `json:"notification_receipts"`
-	MutationReceipts     int                         `json:"mutation_receipts"`
-	StateBytes           int                         `json:"state_bytes"`
-	MaxStateBytes        int                         `json:"max_state_bytes"`
-	MaxCommands          int                         `json:"max_commands"`
-	MaxReceipts          int                         `json:"max_receipts"`
-	OldestEventAt        *time.Time                  `json:"oldest_event_at,omitempty"`
-	LastContact          time.Time                   `json:"last_contact"`
+	ReservedCompletionBytes         int                         `json:"reserved_completion_bytes"`
+	ReservedCompletionNotifications int                         `json:"reserved_completion_notifications"`
+	ExecutionPaused                 bool                        `json:"execution_paused"`
+	ExecutionRevision               uint64                      `json:"execution_revision"`
+	Convergence                     string                      `json:"convergence"`
+	SiteID                          string                      `json:"site_id"`
+	DesiredRevision                 uint64                      `json:"desired_revision"`
+	ReportedRevision                uint64                      `json:"reported_revision"`
+	Reconciliation                  string                      `json:"reconciliation"`
+	BlockingUnknown                 int                         `json:"blocking_unknown"`
+	CommandStates                   map[device.CommandState]int `json:"command_states"`
+	PendingEvents                   int                         `json:"pending_events"`
+	NotificationReceipts            int                         `json:"notification_receipts"`
+	MutationReceipts                int                         `json:"mutation_receipts"`
+	StateBytes                      int                         `json:"state_bytes"`
+	MaxStateBytes                   int                         `json:"max_state_bytes"`
+	MaxCommands                     int                         `json:"max_commands"`
+	MaxReceipts                     int                         `json:"max_receipts"`
+	OldestEventAt                   *time.Time                  `json:"oldest_event_at,omitempty"`
+	LastContact                     time.Time                   `json:"last_contact"`
 }
 
 func (a *Actor) GetStatus(ctx context.Context) (Status, error) {
@@ -175,7 +177,7 @@ func (a *Actor) GetStatus(ctx context.Context) (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	out := Status{ExecutionPaused: s.Execution.Paused, ExecutionRevision: s.Execution.Revision, Convergence: a.convergence(s), DesiredRevision: s.DesiredRevision, ReportedRevision: s.ReportedRevision, Reconciliation: reason, CommandStates: map[device.CommandState]int{}, PendingEvents: len(s.Outbox), NotificationReceipts: len(s.Inbox), MutationReceipts: len(s.Receipts), StateBytes: len(b), MaxStateBytes: a.opts.MaxBytes, MaxCommands: a.opts.MaxCommands, MaxReceipts: a.opts.MaxReceipts, LastContact: s.LastContact}
+	out := Status{ReservedCompletionBytes: a.opts.CompletionReserve.StateBytes, ReservedCompletionNotifications: a.opts.CompletionReserve.Notifications, ExecutionPaused: s.Execution.Paused, ExecutionRevision: s.Execution.Revision, Convergence: a.convergence(s), DesiredRevision: s.DesiredRevision, ReportedRevision: s.ReportedRevision, Reconciliation: reason, CommandStates: map[device.CommandState]int{}, PendingEvents: len(s.Outbox), NotificationReceipts: len(s.Inbox), MutationReceipts: len(s.Receipts), StateBytes: len(b), MaxStateBytes: a.opts.MaxBytes, MaxCommands: a.opts.MaxCommands, MaxReceipts: a.opts.MaxReceipts, LastContact: s.LastContact}
 	if a.opts.Policy != nil {
 		out.SiteID = a.opts.Policy.SiteID
 	}

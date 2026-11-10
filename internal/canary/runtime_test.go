@@ -116,6 +116,7 @@ func TestCanaryAsyncEndToEnd(t *testing.T) {
 	}))
 	defer sidecar.Close()
 	cfg := config.Config{EndpointID: "controller", ClientID: "client", Listen: "127.0.0.1:8080", Broker: "tls://localhost:8883", JournalPath: "events", JournalMaxBytes: 1 << 20, RequestTimeoutSeconds: 1, MaxPending: 10, QoS: 1, Agents: map[string]config.Agent{"device": {Topic: "device/topic", Inbox: "controller/device"}, "legacy": {Topic: "legacy/topic", Inbox: "controller/legacy"}}, ActorCanary: &config.ActorCanary{Enabled: true, EventPubsub: "events", EventTopic: "device-events", Tenant: "tenant", Devices: []string{"device"}, DaprURL: sidecar.URL, CallbackListen: "127.0.0.1:8081", LockPath: filepath.Join(t.TempDir(), "canary.lock")}}
+	cfg.ActorCanary.CompletionReserve = &deviceactor.CompletionReserve{StateBytes: 65536, Notifications: 1}
 	mqtt := &mqttFake{ready: true}
 	journal := &journalFake{}
 	legacy := controller.New(cfg.EndpointID, map[string]string{"device": "device/topic", "legacy": "legacy/topic"}, mqtt, journal, 10)
@@ -125,6 +126,14 @@ func TestCanaryAsyncEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer runtime.Close()
+	for _, identity := range runtime.Devices {
+		body, err := runtime.Client.Invoke(ctx, identity, "GetStatus", nil)
+		var status deviceactor.Status
+		if err != nil || json.Unmarshal(body, &status) != nil || status.ReservedCompletionBytes != 65536 || status.ReservedCompletionNotifications != 1 {
+			t.Fatal("reserve not wired into runtime", string(body), err)
+		}
+	}
+
 	if duplicate, err := New(cfg, mqtt, legacy, appToken, ""); err == nil {
 		duplicate.Close()
 		t.Fatal("second owner acquired lock")

@@ -55,17 +55,18 @@ func (f FleetProjection) Normalized() FleetProjection {
 }
 
 type ActorCanary struct {
-	Fleet          *FleetProjection   `json:"fleet,omitempty"`
-	Twin           *device.TwinPolicy `json:"twin,omitempty"`
-	Replica        *Replica           `json:"replica,omitempty"`
-	EventPubsub    string             `json:"event_pubsub"`
-	EventTopic     string             `json:"event_topic"`
-	Enabled        bool               `json:"enabled"`
-	Tenant         string             `json:"tenant"`
-	Devices        []string           `json:"devices"`
-	DaprURL        string             `json:"dapr_url"`
-	CallbackListen string             `json:"callback_listen"`
-	LockPath       string             `json:"lock_path"`
+	CompletionReserve *deviceactor.CompletionReserve `json:"completion_reserve,omitempty"`
+	Fleet             *FleetProjection               `json:"fleet,omitempty"`
+	Twin              *device.TwinPolicy             `json:"twin,omitempty"`
+	Replica           *Replica                       `json:"replica,omitempty"`
+	EventPubsub       string                         `json:"event_pubsub"`
+	EventTopic        string                         `json:"event_topic"`
+	Enabled           bool                           `json:"enabled"`
+	Tenant            string                         `json:"tenant"`
+	Devices           []string                       `json:"devices"`
+	DaprURL           string                         `json:"dapr_url"`
+	CallbackListen    string                         `json:"callback_listen"`
+	LockPath          string                         `json:"lock_path"`
 }
 
 type Config struct {
@@ -165,6 +166,15 @@ func (c Config) Validate() error {
 				return fmt.Errorf("canary devices must be unique provisioned endpoint IDs")
 			}
 			selected[id] = true
+		}
+	}
+	if a := c.ActorCanary; a != nil && a.CompletionReserve != nil {
+		if !a.Enabled {
+			return fmt.Errorf("completion reserve requires actor canary")
+		}
+		opts := deviceactor.DefaultOptions()
+		if err := a.CompletionReserve.Validate(opts.MaxBytes, opts.MaxCommands, opts.MaxReceipts); err != nil {
+			return err
 		}
 	}
 	if a := c.ActorCanary; a != nil && a.Twin != nil {

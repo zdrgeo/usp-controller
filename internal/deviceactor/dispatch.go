@@ -133,6 +133,11 @@ func (a *Actor) Tick(ctx context.Context) error {
 	if err = proto.Unmarshal(c.Payload, request); err != nil {
 		return err
 	}
+	// Do not begin a new potentially asynchronous operation when even the hard
+	// inbox/outbox limit has no room for its completion. No attempt is recorded.
+	if request.GetOperate() != nil && a.opts.CompletionReserve.Notifications > 0 && (len(s.Inbox) >= a.opts.MaxReceipts || len(s.Outbox) >= a.opts.MaxCommands) {
+		return ErrCapacity
+	}
 	if op := request.GetOperate(); op != nil && !concreteOperation(op.Command) {
 		return ErrInvalid
 	}
@@ -160,7 +165,7 @@ func (a *Actor) Tick(ctx context.Context) error {
 	}
 	s.Commands[id] = c
 	a.compactQueue(s)
-	if err = a.save(ctx, s); err != nil {
+	if err = a.saveOrdinary(ctx, s); err != nil {
 		return err
 	} // no send after an ambiguous begin commit
 	sendCtx, cancel := context.WithDeadline(ctx, c.Deadline)

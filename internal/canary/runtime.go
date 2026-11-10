@@ -103,6 +103,9 @@ func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, 
 		rt.Devices[id] = identity
 		opts := deviceactor.DefaultOptions()
 		opts.Policy = a.Twin
+		if a.CompletionReserve != nil {
+			opts.CompletionReserve = *a.CompletionReserve
+		}
 		backend, err := deviceactor.NewDaprBackend(a.DaprURL, nil, apiToken, identity, 10*time.Second, opts.MaxBytes)
 		if err != nil {
 			return fail(err)

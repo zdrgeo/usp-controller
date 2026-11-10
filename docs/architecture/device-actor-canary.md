@@ -205,9 +205,11 @@ completion. Volatile pubsub components do not satisfy this contract.
 
 The prototype bounds inbox receipts at 1,024, pending events at 64 and the whole
 snapshot at 1 MiB (including commands/twin). No receipt pruning or silent eviction
-occurs. Capacity exhaustion rejects new notifications without NotifyResp, even
-completions; drain exports and use an audited retention/migration procedure before
-exhausting receipts. Reserved completion capacity, automated retention and ingress
+occurs. Without an explicit reserve, capacity exhaustion rejects new notifications
+without NotifyResp, even completions. An optional [completion reserve](device-actor-capacity.md)
+now backpressures ordinary work earlier to preserve bounded headroom for correlated
+evidence. Hard limits still apply; drain exports and use an audited retention or
+migration procedure before exhausting receipts. Automated retention and ingress
 parallelism remain rollout work. Notifications without requested NotifyResp can
 still be lost on disconnect or rejection; MQTT PUBACK is not durable actor acceptance.
 
@@ -417,3 +419,16 @@ JSON field presence on both boundaries, schema-4 queue upgrade, metadata
 corruption, reminder failure, notification/export progress, queued expiry and
 resume preserving unknown/freshness guards. Storage and transport protocols are
 unchanged; the long infrastructure fault/compaction suite was not rerun.
+
+
+## Optional completion capacity reserve
+
+`actor_canary.completion_reserve` now reserves snapshot bytes and notification
+slots by reducing ordinary admission budgets. Matching unresolved completion
+evidence and validated responses can use the remaining hard capacity. Unmatched
+notifications, terminal redeliveries with new IDs and late completions of
+acknowledged unknown attempts cannot take completion priority. New Operate
+attempts require an available hard inbox/outbox slot before beginning; all new
+attempts respect the ordinary byte budget before publication. See the
+[capacity policy and limits](device-actor-capacity.md). Omission preserves prior
+hard-limit behavior. No snapshot migration or default-runtime change is required.

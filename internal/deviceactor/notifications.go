@@ -137,6 +137,7 @@ func (a *Actor) HandleNotify(ctx context.Context, r device.DeviceNotification) (
 	if r.ReceivedAt.After(s.LastContact) {
 		s.LastContact = r.ReceivedAt
 	}
+	completionPriority := false
 	if complete := n.GetOperComplete(); complete != nil {
 		for id, c := range s.Commands {
 			if c.OperationKey == "" || c.OperationKey != complete.CommandKey {
@@ -171,6 +172,9 @@ func (a *Actor) HandleNotify(ctx context.Context, r device.DeviceNotification) (
 			if err = transition(&c, state, "matching OperationComplete received"); err != nil {
 				return zero, err
 			}
+			// Previously acknowledged uncertainty is ordinary late evidence; it
+			// must not consume the headroom for the current unresolved attempt.
+			completionPriority = c.UnknownAcknowledgement == nil
 			c.Completion = payload
 			s.Commands[id] = c
 			break
@@ -184,10 +188,7 @@ func (a *Actor) HandleNotify(ctx context.Context, r device.DeviceNotification) (
 	}
 	s.EventSequence++
 	s.Outbox = append(s.Outbox, storedEvent{Epoch: hex.EncodeToString(epoch), Sequence: s.EventSequence, ReceivedAt: r.ReceivedAt.UTC(), Payload: payload})
-	if err = a.backend.EnsureReminder(ctx); err != nil {
-		return zero, err
-	}
-	if err = a.save(ctx, s); err != nil {
+	if err = a.saveNotification(ctx, s, completionPriority); err != nil {
 		return zero, err
 	}
 	return device.NotifyReceipt{MessageID: mid}, nil

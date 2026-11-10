@@ -110,7 +110,11 @@ func (a *Actor) SetExecution(ctx context.Context, r device.SetExecutionRequest) 
 	revision := s.Execution.Revision + 1
 	s.Execution = &device.ExecutionState{Paused: r.Paused, Revision: revision, RequestID: r.RequestID, Reason: r.Reason, UpdatedAt: a.opts.Now().UTC()}
 	s.Receipts[r.RequestID] = receipt{Kind: "execution_control", Fingerprint: fp, Revision: revision}
-	if err := a.save(ctx, s); err != nil {
+	save := a.saveOrdinary
+	if r.Paused {
+		save = a.save
+	}
+	if err := save(ctx, s); err != nil {
 		return device.ExecutionReceipt{}, err
 	}
 	return device.ExecutionReceipt{RequestID: r.RequestID, Revision: revision, Paused: r.Paused}, nil

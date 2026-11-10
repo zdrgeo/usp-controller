@@ -305,6 +305,9 @@ func validateStatus(s deviceactor.Status, site string) error {
 	default:
 		return ErrInvalid
 	}
+	if s.ReservedCompletionBytes < 0 || s.ReservedCompletionBytes >= s.MaxStateBytes || s.ReservedCompletionNotifications < 0 || s.ReservedCompletionNotifications >= s.MaxCommands || s.ReservedCompletionNotifications >= s.MaxReceipts {
+		return ErrInvalid
+	}
 	if s.ExecutionPaused && s.ExecutionRevision == 0 {
 		return ErrInvalid
 	}
