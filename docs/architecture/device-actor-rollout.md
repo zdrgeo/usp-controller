@@ -145,8 +145,8 @@ of immediate sending; explicit commands, MQTT or export failures can delay it.
 Use these bounded per-device reads to inspect canaries and monitor receipt/command
 capacity, pending-event age and unknown outcomes. There is no all-device fanout on
 a health request. An optional persistent [fleet status projector](device-fleet-projections.md) consumes
-notification hints and refreshes these diagnostics. Prometheus metrics, global
-site routing and value redaction remain future work. A fleet projection
+notification hints and refreshes these diagnostics. Bounded [host-local operation metrics](device-actor-metrics.md) are now available.
+Global site routing and value redaction remain future work. A fleet projection
 must be explicitly eventually consistent and must never claim to be the actor's
 current authoritative state.
 
@@ -216,3 +216,15 @@ and observation/policy guards. It cannot replay old attempts or revoke a send
 already begun. Twin/status/fleet rows expose the control state, and stale retries
 cannot overwrite newer decisions. Legacy remains the default; production rollout,
 retention budgets and site-level scheduling remain separate work.
+
+
+### Host-local operation metrics continuation
+
+Canary hosts now expose authenticated `GET /v2/metrics` for bounded operation
+counters and latency histograms. Actor callbacks, snapshot/reminder calls, device
+publication attempts and event handoffs use fixed method/outcome labels without
+device identities or payloads. Scraping never reads actor state or invokes Dapr,
+and does not hold the recording lock while writing to the client. Typed actor
+conflicts/capacity failures are counted as domain errors even when Dapr's callback
+envelope uses HTTP 200. See [metric semantics and limits](device-actor-metrics.md).
+This adds passive instrumentation; legacy remains the default.

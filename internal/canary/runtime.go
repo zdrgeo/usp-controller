@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"example.com/usp-controller/internal/actormetrics"
 	"example.com/usp-controller/internal/config"
 	"example.com/usp-controller/internal/controller"
 	"example.com/usp-controller/internal/device"
@@ -47,6 +48,7 @@ func (t transport) Publish(ctx context.Context, id device.DeviceIdentity, attemp
 }
 
 type Runtime struct {
+	Metrics       *actormetrics.Registry
 	Devices       map[string]device.DeviceIdentity
 	Client        *deviceactor.Client
 	Host          http.Handler
@@ -84,7 +86,7 @@ func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, 
 		lock.Close()
 		return nil, fmt.Errorf("single-host canary lock unavailable: %w", err)
 	}
-	rt := &Runtime{Devices: map[string]device.DeviceIdentity{}, Client: &deviceactor.Client{Endpoint: a.DaprURL, Token: apiToken}, legacy: legacy, controllerID: cfg.EndpointID, routes: map[string]string{}, lock: lock, mqtt: mqtt, replica: a.Replica, eventPubsub: a.EventPubsub}
+	rt := &Runtime{Metrics: actormetrics.New(), Devices: map[string]device.DeviceIdentity{}, Client: &deviceactor.Client{Endpoint: a.DaprURL, Token: apiToken}, legacy: legacy, controllerID: cfg.EndpointID, routes: map[string]string{}, lock: lock, mqtt: mqtt, replica: a.Replica, eventPubsub: a.EventPubsub}
 	fail := func(err error) (*Runtime, error) { rt.Close(); return nil, err }
 	for id, agent := range cfg.Agents {
 		rt.routes[id] = agent.Topic
@@ -112,13 +114,13 @@ func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, 
 				return fail(err)
 			}
 		}
-		actor, err := deviceactor.NewWithEvents(identity, stateBackend, opts, transport{mqtt: mqtt, topic: cfg.Agents[id].Topic, qos: cfg.QoS, available: rt.DispatchReady}, &deviceactor.DaprEventPublisher{Endpoint: a.DaprURL, Token: apiToken, Pubsub: a.EventPubsub, Topic: a.EventTopic})
+		actor, err := deviceactor.NewWithEvents(identity, rt.Metrics.Backend(stateBackend), opts, rt.Metrics.Transport(transport{mqtt: mqtt, topic: cfg.Agents[id].Topic, qos: cfg.QoS, available: rt.DispatchReady}), rt.Metrics.Publisher(&deviceactor.DaprEventPublisher{Endpoint: a.DaprURL, Token: apiToken, Pubsub: a.EventPubsub, Topic: a.EventTopic}))
 		if err != nil {
 			return fail(err)
 		}
 		actors = append(actors, actor)
 	}
-	rt.Host, err = deviceactor.NewHost(actors, appToken, 2<<20)
+	rt.Host, err = deviceactor.NewHost(actors, appToken, 2<<20, rt.Metrics)
 	if err != nil {
 		return fail(err)
 	}

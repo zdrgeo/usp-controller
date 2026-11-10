@@ -559,3 +559,14 @@ attempts and reconciliation planning while retaining ingestion, event export,
 queue deadlines and accepted intent. Resume obeys existing safety guards and
 does not replay attempts. Schema 5 binds the persisted control to its decision
 receipt and fails closed for missing/corrupt metadata. Legacy remains the default.
+
+
+### Operational metrics implementation
+
+The opt-in runtime now records [host-local operation metrics](device-actor-metrics.md)
+for actor callbacks, snapshot/reminder operations, MQTT attempts and durable event
+handoffs. An authenticated Prometheus text endpoint reads bounded local counters,
+with no actor fanout or control side effects. Labels exclude device/request IDs
+and payloads. Publication uncertainty and typed domain failures remain visible,
+without adding retries or treating metrics as durable receipts. Fleet/backlog
+snapshots remain separate and eventually consistent. Legacy remains the default.

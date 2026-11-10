@@ -158,6 +158,8 @@ func run() error {
 			handler = projection.Handler(handler, token)
 		}
 		handler = actorRuntime.AdmissionGate(handler)
+		// Scrapes use only local observations and remain available during drain.
+		handler = actorRuntime.Metrics.Handler(handler, token, opts.SiteID)
 	}
 	server := &http.Server{Addr: cfg.Listen, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: timeout + 15*time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	go func() { serverErrors <- server.ListenAndServe() }()

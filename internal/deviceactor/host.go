@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"example.com/usp-controller/internal/actormetrics"
 	"example.com/usp-controller/internal/device"
 	"example.com/usp-controller/internal/pb/usp"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -19,16 +20,20 @@ import (
 // methods are available only for execution-enabled actors.
 // Put it on a private app channel; token must match Dapr's app API token.
 type Host struct {
+	metrics *actormetrics.Registry
 	actors  map[string]*Actor
 	token   string
 	maxBody int64
 }
 
-func NewHost(actors []*Actor, token string, maxBody int64) (*Host, error) {
+func NewHost(actors []*Actor, token string, maxBody int64, metrics ...*actormetrics.Registry) (*Host, error) {
 	if len(token) < 32 || maxBody <= 0 {
 		return nil, ErrInvalid
 	}
 	h := &Host{actors: map[string]*Actor{}, token: token, maxBody: maxBody}
+	if len(metrics) > 0 {
+		h.metrics = metrics[0]
+	}
 	for _, a := range actors {
 		if a == nil {
 			return nil, ErrInvalid
@@ -73,6 +78,23 @@ func (h *Host) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut || len(parts) < 5 || parts[3] != "method" {
 		http.NotFound(w, r)
 		return
+	}
+	if h.metrics != nil {
+		operation := parts[4]
+		if len(parts) == 6 && parts[4] == "remind" && parts[5] == ReminderName {
+			operation = "Tick"
+		}
+		observed := &callMetricsWriter{ResponseWriter: w}
+		w = observed
+		started := time.Now()
+		defer func() {
+			if failure := recover(); failure != nil {
+				observed.domainError = errors.New("actor panic")
+				observeActor(h.metrics, operation, started, observed)
+				panic(failure)
+			}
+			observeActor(h.metrics, operation, started, observed)
+		}()
 	}
 	if len(parts) == 6 && parts[4] == "remind" && parts[5] == ReminderName {
 		respond(w, nil, a.Tick(r.Context()))
@@ -230,6 +252,9 @@ func writeJSON(w http.ResponseWriter, v any) {
 }
 func respond(w http.ResponseWriter, v any, err error) {
 	if err != nil {
+		if observed, ok := w.(interface{ actorError(error) }); ok {
+			observed.actorError(err)
+		}
 		status := http.StatusInternalServerError
 		switch {
 		case errors.Is(err, ErrInvalid):
