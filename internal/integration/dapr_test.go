@@ -342,6 +342,9 @@ func TestLiveDapr(t *testing.T) {
 	if !t.Run("etcd compaction recovery", func(t *testing.T) { testEtcdCompaction(t, members, autoID) }) {
 		return
 	}
+	if !t.Run("etcd automatic compaction recovery", func(t *testing.T) { testEtcdAutomaticCompaction(t, autoID) }) {
+		return
+	}
 	if !t.Run("etcd restore cutover", func(t *testing.T) { testEtcdRestoreCutover(t, members[0], autoID) }) {
 		return
 	}

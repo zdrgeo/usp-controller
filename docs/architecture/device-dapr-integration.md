@@ -623,3 +623,47 @@ Full validation on 2026-11-09: `go test -race ./...`, `go vet ./...`, and
 `USP_TEST_DAPR=1 go test -race -count=1 -v -timeout=15m ./internal/integration`
 passed. The full live suite completed in 641.986 seconds, including all four
 compaction cases and existing partition, restart, backup and restore checks.
+
+## Live etcd automatic compaction and recovery
+
+`etcd automatic compaction recovery` starts a separate three-member etcd 3.5.17
+cluster with `--auto-compaction-mode periodic --auto-compaction-retention 2s`.
+The server runs its normal compactor and real clock. No manual compaction request
+is sent to this cluster. The main Dapr/etcd fixture retains its existing settings.
+The short retention is a test setting, not a production recommendation. See the
+[pinned periodic compactor implementation](https://github.com/etcd-io/etcd/blob/v3.5.17/server/etcdserver/api/v3compactor/periodic.go)
+and [etcd maintenance guide](https://etcd.io/docs/v3.5/op-guide/maintenance/).
+
+Both single- and three-endpoint backends run two successive retention cycles.
+Each case uses an offline Device actor outside the Dapr inventory, with no active
+reminders, event publisher or device transport. A test gate holds a snapshot save
+before the backend starts its HTTP transaction, after the actor has loaded its
+state. This permits waiting for the actual retention policy without changing the
+production five-second HTTP timeout. The gate is released only after every member
+rejects a historical range at that exact captured read revision with the explicit
+compacted-history error. An unrelated key advances the global revision while the
+device key's modification revision remains unchanged. A historical read must
+succeed before advancement, proving the test observes a real retention transition.
+
+The released save must submit exactly one transaction and receive etcd's
+compacted-history error. Independent exports require unchanged snapshot bytes,
+receipts and ETag. A cached writer must also fail; reusing the actor backend's
+invalidated version must send no transaction. The same actor then reloads and
+retries the stable request ID, committing once. Its duplicate must return the
+stored receipt with no additional transaction or ETag change. A fresh actor
+verifies the recovered twin and all earlier receipts after each cycle. Server
+logs must also contain an automatic periodic compaction completion.
+
+This qualifies repeated periodic retention expiry and application recovery on a
+local cluster. Revision-count automatic compaction, leader changes or network
+faults during automatic compaction, defragmentation, disk pressure and production
+retention sizing remain outside these cases. Existing tests cover network and
+leader failures separately. Production code and configuration are unchanged;
+legacy remains the default.
+
+Validated on 2026-11-10: `go test -race ./...`, `go vet ./...`, and the complete
+`USP_TEST_DAPR=1 go test -race -count=1 -v -timeout=15m ./internal/integration`
+suite passed. The focused automatic compaction run completed in 41.076 seconds;
+the full live suite completed in 671.735 seconds, including both endpoint
+configurations with two retention cycles each and the existing network, restart,
+manual compaction, backup and restore checks.

@@ -248,3 +248,12 @@ endpoints. They hold a command transaction across compaction, verify an explicit
 compacted-history rejection and unchanged snapshot bytes/ETag, then recover through
 a fresh read on the same actor and backend. Stable request retries retain one
 receipt without another write. No production defaults are changed.
+
+The [automatic compaction cases](device-dapr-integration.md#live-etcd-automatic-compaction-and-recovery)
+use a separate three-member cluster with two-second periodic retention, leaving
+the main fixture unchanged. Single- and three-endpoint backends each survive two
+retention cycles: the server expires the captured read revision on every member,
+rejects the held save atomically, and accepts recovery after the same actor reloads.
+Stable request retries preserve one receipt without another write. This is periodic
+automatic compaction coverage; revision-count retention and concurrent fault
+injection remain separate qualification work. Legacy remains the default.
