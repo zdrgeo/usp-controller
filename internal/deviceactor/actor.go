@@ -329,10 +329,11 @@ func (a *Actor) GetTwin(ctx context.Context) (device.DeviceTwin, error) {
 		return device.DeviceTwin{}, err
 	}
 	t := device.DeviceTwin{Execution: *s.Execution, Identity: a.id, DesiredRevision: s.DesiredRevision, ReportedRevision: s.ReportedRevision, Desired: s.Desired, Reported: s.Reported, LastContact: s.LastContact, Convergence: "converged"}
-	t.Convergence = a.convergence(s)
+	now := a.opts.Now()
+	t.Convergence = a.convergenceAt(s, now)
 	for path, got := range t.Reported {
-		if !s.observationBarrier.IsZero() && !got.ReceivedAt.After(s.observationBarrier) {
-			got.FreshUntil = time.Time{} // historical value remains visible, never fresh
+		if got.ReceivedAt.After(now) || (!s.observationBarrier.IsZero() && !got.ReceivedAt.After(s.observationBarrier)) {
+			got.FreshUntil = time.Time{} // historical value remains visible, not fresh in this view
 			t.Reported[path] = got
 		}
 	}

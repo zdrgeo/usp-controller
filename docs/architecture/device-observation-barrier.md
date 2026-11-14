@@ -65,3 +65,8 @@ clock rollback, restart reconstruction, historical values without read-side save
 equal-time rejection, bounded post-mutation Get refresh and read-only attempts.
 Existing acknowledgement tests now require fresh evidence after a mutation. Long
 infrastructure fault drills were not repeated for this actor-local derived view.
+
+The [twin diff](device-twin-diff.md) now exposes observation eligibility without
+values. Controller receive times later than the current controller time are also
+unusable after clock rollback; they remain historical evidence until time/order
+checks allow newer usable observations.

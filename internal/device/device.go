@@ -31,6 +31,7 @@ type DeviceRequester interface {
 // not register or invoke it.
 type DeviceActor interface {
 	GetTwin(context.Context) (DeviceTwin, error)
+	GetTwinDiff(context.Context) (TwinDiff, error)
 	RefreshTwin(context.Context, RefreshTwinRequest) (CommandReceipt, error)
 	GetExecution(context.Context) (ExecutionState, error)
 	SetExecution(context.Context, SetExecutionRequest) (ExecutionReceipt, error)

@@ -65,6 +65,7 @@ cross-site migration protocol. Site is not added to persistent actor identity.
 |---|---|
 | `GET /v2/devices/{device}/twin` | Authoritative actor twin, filtered to managed paths |
 | `PATCH /v2/devices/{device}/desired` | Atomic compare-and-set desired mutation with durable receipt |
+| `GET /v2/devices/{device}/twin/diff` | Value-free per-path observation differences; no dispatch or maintenance |
 | `POST /v2/devices/{device}/twin/refresh` | One explicit queued Get of reviewed managed paths; requires Get projection |
 | `GET /v2/devices/{device}/status` | Value-free actor diagnostics and reconciliation eligibility |
 
@@ -352,3 +353,12 @@ The runtime now owns a [joined reminder-repair loop](device-reminder-repair.md).
 sweeps or a goroutine per device. Shutdown cancels and joins local repair work;
 remote activation remains idempotent and non-dispatching. Legacy remains the
 default and schema 9 is unchanged.
+
+
+## Read-only twin difference diagnostics
+
+The [twin diff](device-twin-diff.md) API now explains missing, stale, invalid,
+future-dated and mutation-invalidated observations without exposing values or
+triggering work. Current policy controls path visibility. Convergence uses the
+same observation classification, and future-dated evidence cannot authorize
+reconciliation after clock rollback. Legacy and schema 9 are unchanged.

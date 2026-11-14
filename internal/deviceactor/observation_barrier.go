@@ -39,7 +39,7 @@ func rebuildObservationBarrier(s *snapshot) error {
 }
 
 func observationFresh(s *snapshot, got device.Observation, now time.Time) bool {
-	return now.Before(got.FreshUntil) && (s.observationBarrier.IsZero() || got.ReceivedAt.After(s.observationBarrier))
+	return !got.ReceivedAt.After(now) && now.Before(got.FreshUntil) && (s.observationBarrier.IsZero() || got.ReceivedAt.After(s.observationBarrier))
 }
 
 // Record definitive evidence at processing time, not a device-provided clock.

@@ -230,18 +230,5 @@ func (a *Actor) GetStatus(ctx context.Context) (Status, error) {
 }
 
 func (a *Actor) convergence(s *snapshot) string {
-	state := "converged"
-	for path, want := range s.Desired {
-		if a.opts.Policy != nil && !a.opts.Policy.Allows(path, want, true) {
-			return "unknown"
-		}
-		got, ok := s.Reported[path]
-		if !ok || !observationFresh(s, got, a.opts.Now()) {
-			return "unknown"
-		}
-		if got.Value != want {
-			state = "pending"
-		}
-	}
-	return state
+	return a.convergenceAt(s, a.opts.Now())
 }

@@ -717,3 +717,14 @@ turns, keeps sweeps non-overlapping and joins local workers on cancellation. The
 application cancels repair during drain before releasing runtime resources.
 Default remains one worker; legacy, schema 9 and command execution semantics are
 unchanged.
+
+
+### Read-only twin difference diagnostics
+
+The actor contract, callback and authenticated API now expose a bounded
+[value-free twin diff](device-twin-diff.md). It explains observation eligibility
+per desired path at one controller time without performing maintenance or
+dispatch. Convergence shares its typed observation checks; controller-clock
+rollback cannot make future-dated evidence eligible for reconciliation. Policy
+withdrawal hides path names while retaining an aggregate count. Legacy remains
+the default and schema 9 is unchanged.

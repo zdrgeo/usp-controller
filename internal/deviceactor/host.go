@@ -225,6 +225,9 @@ func (h *Host) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "GetStatus":
 		v, err := a.GetStatus(r.Context())
 		respond(w, v, err)
+	case "GetTwinDiff":
+		v, err := a.GetTwinDiff(r.Context())
+		respond(w, v, err)
 	case "GetTwin":
 		v, err := a.GetTwin(r.Context())
 		respond(w, v, err)

@@ -34,7 +34,7 @@ func allowed(boundary, operation, result string) bool {
 	switch boundary {
 	case "actor":
 		switch operation {
-		case "Activate", "Tick", "GetTwin", "RefreshTwin", "SetDesired", "Report", "GetStatus", "GetExecution", "SetExecution", "EnqueueCommand", "GetCommand", "ListCommands", "CancelCommand", "AcknowledgeUnknown", "HandleNotify", "HandleResponse":
+		case "Activate", "Tick", "GetTwin", "GetTwinDiff", "RefreshTwin", "SetDesired", "Report", "GetStatus", "GetExecution", "SetExecution", "EnqueueCommand", "GetCommand", "ListCommands", "CancelCommand", "AcknowledgeUnknown", "HandleNotify", "HandleResponse":
 		default:
 			return false
 		}

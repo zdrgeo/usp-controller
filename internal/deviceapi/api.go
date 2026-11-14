@@ -201,6 +201,19 @@ func Handler(next http.Handler, invoker Invoker, devices map[string]device.Devic
 		output(w, 200, b)
 	}))
 	if opts.TwinEnabled {
+		mux.HandleFunc("GET /v2/devices/{device}/twin/diff", auth(func(w http.ResponseWriter, r *http.Request, id device.DeviceIdentity) {
+			if r.URL.RawQuery != "" {
+				http.Error(w, "twin diff accepts no query fields", 400)
+				return
+			}
+			b, err := invoker.Invoke(r.Context(), id, "GetTwinDiff", nil)
+			if err != nil {
+				failure(w, err)
+				return
+			}
+			w.Header().Set("Cache-Control", "no-store")
+			output(w, 200, b)
+		}))
 		mux.HandleFunc("POST /v2/devices/{device}/twin/refresh", auth(func(w http.ResponseWriter, r *http.Request, id device.DeviceIdentity) {
 			var input device.RefreshTwinRequest
 			if !decode(w, r, &input) {
