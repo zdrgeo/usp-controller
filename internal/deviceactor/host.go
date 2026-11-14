@@ -123,6 +123,14 @@ func (h *Host) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			receipt, err := a.SetExecution(r.Context(), request)
 			respond(w, receipt, err)
 			return
+		case "RefreshTwin":
+			var input device.RefreshTwinRequest
+			if !h.decode(w, r, &input) {
+				return
+			}
+			receipt, err := a.RefreshTwin(r.Context(), input)
+			respond(w, CommandOutput{RequestID: receipt.ID, Revision: receipt.Revision, State: receipt.State}, err)
+			return
 		case "EnqueueCommand":
 			var input CommandInput
 			if !h.decode(w, r, &input) {
@@ -206,7 +214,7 @@ func (h *Host) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				respond(w, nil, ErrInvalid)
 				return
 			}
-			respond(w, nil, a.HandleResponse(r.Context(), device.DeviceResponse{Identity: input.Identity, Message: msg}))
+			respond(w, nil, a.HandleResponse(r.Context(), device.DeviceResponse{Identity: input.Identity, Message: msg, ReceivedAt: time.Now().UTC()}))
 			return
 		case "Tick":
 			respond(w, nil, a.Tick(r.Context()))

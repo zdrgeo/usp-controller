@@ -676,3 +676,14 @@ uncommitted begins leave freshness intact; ambiguous committed begins invalidate
 old readings. Newer evidence must satisfy the existing Get/Notify/Report rules.
 No persistent field, backend protocol or schema change is added. Legacy remains
 the default; legacy attempts without timestamps remain an explicit limitation.
+
+
+### Explicit managed-twin refresh
+
+The actor contract, callback and authenticated API now expose
+[asynchronous twin refresh](device-twin-refresh.md). It builds a deterministic
+Get from the reviewed policy and delegates to ordinary durable command admission.
+The response callback now supplies controller receive time so valid correlated
+Get results can update the twin through the production callback path. No new
+persistent command kind, automatic retry or schema change is introduced. Legacy
+remains the default and projection remains opt-in.

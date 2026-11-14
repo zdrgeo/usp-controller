@@ -31,6 +31,7 @@ type DeviceRequester interface {
 // not register or invoke it.
 type DeviceActor interface {
 	GetTwin(context.Context) (DeviceTwin, error)
+	RefreshTwin(context.Context, RefreshTwinRequest) (CommandReceipt, error)
 	GetExecution(context.Context) (ExecutionState, error)
 	SetExecution(context.Context, SetExecutionRequest) (ExecutionReceipt, error)
 	SetDesired(context.Context, SetDesiredRequest) (DesiredReceipt, error)
@@ -90,6 +91,13 @@ type DeviceTwin struct {
 
 // Same request ID and immutable content returns the original receipt. A changed
 // payload conflicts. ExpectedRevision applies only to first admission.
+// RefreshTwinRequest requests one explicit read of the current managed policy.
+// It shares command identity, queueing and delivery semantics with raw Get.
+type RefreshTwinRequest struct {
+	RequestID RequestID `json:"request_id"`
+	Deadline  time.Time `json:"deadline"`
+}
+
 type SetDesiredRequest struct {
 	ID               RequestID
 	ExpectedRevision uint64

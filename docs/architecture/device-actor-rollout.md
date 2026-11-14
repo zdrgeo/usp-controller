@@ -65,6 +65,7 @@ cross-site migration protocol. Site is not added to persistent actor identity.
 |---|---|
 | `GET /v2/devices/{device}/twin` | Authoritative actor twin, filtered to managed paths |
 | `PATCH /v2/devices/{device}/desired` | Atomic compare-and-set desired mutation with durable receipt |
+| `POST /v2/devices/{device}/twin/refresh` | One explicit queued Get of reviewed managed paths; requires Get projection |
 | `GET /v2/devices/{device}/status` | Value-free actor diagnostics and reconciliation eligibility |
 
 Example desired patch (the API accepts the existing ParameterValue DTO):
@@ -312,3 +313,13 @@ newer evidence is required even after a Set success or unknown acknowledgement.
 This uses existing retained timestamps without a schema change; pre-schema-6
 attempts lacking provenance remain an explicit migration limitation. Legacy is
 still the default.
+
+
+## Explicit asynchronous twin refresh
+
+The authenticated [refresh API](device-twin-refresh.md) now queues one Get over
+all reviewed managed paths without requiring callers to construct USP messages.
+It uses ordinary command IDs, deadlines, receipts and dispatch gates; it does not
+enable reconciliation or retry attempted reads. Response callbacks now assign
+controller receive time, allowing their correlated Get evidence to reach the twin
+under the existing projection checks. Legacy and schema 8 remain unchanged.

@@ -52,7 +52,7 @@ remain authoritative.
 ## Cardinality, privacy and operation
 
 Operations and outcomes are allowlisted before allocating a series. The current
-registry can hold at most 146 operation/result combinations (1460 Prometheus
+registry can hold at most 155 operation/result combinations (1550 Prometheus
 series in the operation families including histogram buckets/sum/count). Unknown method/outcome strings
 are ignored rather than added as labels. Labels never contain device, controller,
 tenant, request, message or operation IDs; error text, reasons, paths, parameter

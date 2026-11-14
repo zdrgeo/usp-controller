@@ -201,6 +201,24 @@ func Handler(next http.Handler, invoker Invoker, devices map[string]device.Devic
 		output(w, 200, b)
 	}))
 	if opts.TwinEnabled {
+		mux.HandleFunc("POST /v2/devices/{device}/twin/refresh", auth(func(w http.ResponseWriter, r *http.Request, id device.DeviceIdentity) {
+			var input device.RefreshTwinRequest
+			if !decode(w, r, &input) {
+				return
+			}
+			if !validID(string(input.RequestID)) || strings.HasPrefix(string(input.RequestID), "reconcile-") || input.Deadline.IsZero() {
+				http.Error(w, "request_id and absolute deadline required", 400)
+				return
+			}
+			b, err := invoker.Invoke(r.Context(), id, "RefreshTwin", input)
+			if err != nil {
+				failure(w, err)
+				return
+			}
+			w.Header().Set("Location", "/v2/devices/"+url.PathEscape(id.AgentID)+"/commands/"+url.PathEscape(string(input.RequestID)))
+			w.Header().Set("Cache-Control", "no-store")
+			output(w, 202, b)
+		}))
 		mux.HandleFunc("GET /v2/devices/{device}/twin", auth(func(w http.ResponseWriter, r *http.Request, id device.DeviceIdentity) {
 			b, err := invoker.Invoke(r.Context(), id, "GetTwin", nil)
 			if err != nil {
