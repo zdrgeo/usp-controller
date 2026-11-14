@@ -665,3 +665,14 @@ matched. A changed diff cancels the old plan rather than silently sending an
 incomplete update or rewriting accepted intent. A cancelled generated write is
 not recreated under the same desired revision. Legacy remains the default; schema
 8, explicit-command behavior and persistence protocols are unchanged.
+
+
+### Mutation-aware observation freshness
+
+The actor now derives an [observation barrier](device-observation-barrier.md) from
+retained durable mutation attempts. Pre-attempt readings remain historical values
+but cannot establish convergence or authorize a new reconciliation write. Failed
+uncommitted begins leave freshness intact; ambiguous committed begins invalidate
+old readings. Newer evidence must satisfy the existing Get/Notify/Report rules.
+No persistent field, backend protocol or schema change is added. Legacy remains
+the default; legacy attempts without timestamps remain an explicit limitation.

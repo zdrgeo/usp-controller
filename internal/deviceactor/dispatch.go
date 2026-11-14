@@ -204,6 +204,7 @@ func (a *Actor) Tick(ctx context.Context) (resultErr error) {
 		return err
 	}
 	s.Commands[id] = c
+	advanceObservationBarrier(s, request, attemptedAt)
 	a.compactQueue(s)
 	if err = a.saveOrdinary(ctx, s); err != nil {
 		return err

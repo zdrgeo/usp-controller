@@ -37,7 +37,7 @@ func (a *Actor) planObservation(s *snapshot) (*usp.Request, string) {
 			return nil, "policy_blocked"
 		}
 		got, ok := s.Reported[path]
-		if !ok || !a.opts.Now().Before(got.FreshUntil) || !p.Allows(path, got.Value, false) {
+		if !ok || !observationFresh(s, got, a.opts.Now()) || !p.Allows(path, got.Value, false) {
 			paths = append(paths, path)
 		}
 	}
@@ -69,7 +69,7 @@ func (a *Actor) currentObservation(s *snapshot, c storedCommand) bool {
 			return false
 		}
 		got, ok := s.Reported[path]
-		if !ok || !a.opts.Now().Before(got.FreshUntil) || !p.Allows(path, got.Value, false) {
+		if !ok || !observationFresh(s, got, a.opts.Now()) || !p.Allows(path, got.Value, false) {
 			needed = true
 		}
 	}

@@ -88,7 +88,7 @@ func (a *Actor) reconciliationDiff(s *snapshot, now time.Time) (*usp.Request, st
 			return nil, "policy_blocked"
 		}
 		got, ok := s.Reported[path]
-		if !ok || !now.Before(got.FreshUntil) || !a.opts.Policy.Allows(path, got.Value, false) {
+		if !ok || !observationFresh(s, got, now) || !a.opts.Policy.Allows(path, got.Value, false) {
 			return nil, "waiting_observation"
 		}
 		if got.Value != want {
@@ -236,7 +236,7 @@ func (a *Actor) convergence(s *snapshot) string {
 			return "unknown"
 		}
 		got, ok := s.Reported[path]
-		if !ok || !a.opts.Now().Before(got.FreshUntil) {
+		if !ok || !observationFresh(s, got, a.opts.Now()) {
 			return "unknown"
 		}
 		if got.Value != want {

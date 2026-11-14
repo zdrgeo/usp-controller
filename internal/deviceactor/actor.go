@@ -110,6 +110,7 @@ type storedCommand struct {
 	Completion             []byte
 }
 type snapshot struct {
+	observationBarrier                time.Time // derived from retained mutation attempts; not serialized
 	AttemptSequence                   uint64
 	Execution                         *device.ExecutionState
 	Schema                            int
@@ -247,6 +248,9 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 			return nil, fmt.Errorf("unsupported receipt kind")
 		}
 	}
+	if err := rebuildObservationBarrier(s); err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 func (a *Actor) save(ctx context.Context, s *snapshot) error {
@@ -312,6 +316,12 @@ func (a *Actor) GetTwin(ctx context.Context) (device.DeviceTwin, error) {
 	}
 	t := device.DeviceTwin{Execution: *s.Execution, Identity: a.id, DesiredRevision: s.DesiredRevision, ReportedRevision: s.ReportedRevision, Desired: s.Desired, Reported: s.Reported, LastContact: s.LastContact, Convergence: "converged"}
 	t.Convergence = a.convergence(s)
+	for path, got := range t.Reported {
+		if !s.observationBarrier.IsZero() && !got.ReceivedAt.After(s.observationBarrier) {
+			got.FreshUntil = time.Time{} // historical value remains visible, never fresh
+			t.Reported[path] = got
+		}
+	}
 	for id, c := range s.Commands {
 		if c.Receipt.State == device.CommandUnknown {
 			t.Unknown = append(t.Unknown, id)

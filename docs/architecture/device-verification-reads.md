@@ -31,7 +31,9 @@ The correlated Get response uses the existing conservative
 [projection rules](device-get-observations.md): reviewed values, latest attempt,
 valid receive time, freshness anchored to read start, and protection for newer
 observations. The command evidence and optional twin update share one save.
-Matching fresh observations can establish convergence. A mismatch remains
+Pre-mutation readings are historical under the
+[observation barrier](device-observation-barrier.md); Set success alone can leave
+convergence unknown. Matching fresh observations can establish convergence. A mismatch remains
 pending; unusable or stale evidence can leave convergence unknown. Neither case
 authorizes another Set for the same desired revision.
 

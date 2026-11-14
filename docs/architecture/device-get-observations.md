@@ -20,7 +20,9 @@ observations received at or after that attempt started win. This conservatively
 excludes delayed reads after a newer command, even if that newer command failed.
 An observation uses source `usp-get-response`, the response receive time, and
 `fresh_until` anchored to attempt start. Arrival does not extend the read window.
-It is an observation, not proof that a later write succeeded.
+The [mutation barrier](device-observation-barrier.md) also requires observations
+to be newer than known mutating attempts. It is an observation, not proof that a
+later write succeeded.
 
 Projection follows the Get response mapping described in
 [TR-369 Get](https://usp.technology/specification/#sec:get). Each promoted value

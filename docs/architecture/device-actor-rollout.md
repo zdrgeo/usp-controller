@@ -101,7 +101,8 @@ A maintenance turn may generate one USP Set only when:
 1. Reconciliation is explicitly enabled and the local dispatch guard/MQTT is ready.
 2. There is no queued explicit work or awaiting/unknown command.
 3. Every desired path remains writable under policy and has a fresh, typed reported
-   observation. Missing/stale observations cause waiting, not a blind write.
+   observation received after any known mutating attempt. Missing, stale or
+   pre-mutation observations cause waiting, not a blind write.
 4. At least one desired value differs and no generated command exists for that
    desired revision.
 
@@ -300,3 +301,14 @@ and `go vet` passed; focused checks cover expiry of an unchanged desired path
 both before and during export, expansion/shrinkage of a queued diff and continued
 eligibility when observation values change without altering the requested diff.
 Storage fault drills were not repeated for this actor-local eligibility change.
+
+
+## Mutation observation barrier
+
+The actor now derives an [observation barrier](device-observation-barrier.md) from
+durable Set/Add/Delete/Operate attempt provenance. Older readings remain visible
+as history but cannot establish convergence or authorize reconciliation. Suitable
+newer evidence is required even after a Set success or unknown acknowledgement.
+This uses existing retained timestamps without a schema change; pre-schema-6
+attempts lacking provenance remain an explicit migration limitation. Legacy is
+still the default.

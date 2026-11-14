@@ -152,6 +152,11 @@ func TestAcknowledgedReconciliationRequiresNewDesiredRevision(t *testing.T) {
 	if _, err := a.SetDesired(ctx, desired("new-authorization", 1)); err != nil {
 		t.Fatal(err)
 	}
+	if err := a.Tick(ctx); err != nil || len(f.calls) != 1 {
+		t.Fatal("new revision reused pre-mutation evidence", err)
+	}
+	*now = now.Add(time.Second)
+	observe(t, a, "post-mutation", *now, "old")
 	if err := a.Tick(ctx); err != nil || len(f.calls) != 2 {
 		t.Fatal("new desired revision did not authorize work", err)
 	}

@@ -39,7 +39,7 @@ func TestVerificationReadObservesWithoutRetryingWrites(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			a, b, f, now := verificationActor(t)
 			twin, _ := a.GetTwin(ctx)
-			if twin.Convergence != "pending" {
+			if twin.Convergence != "unknown" {
 				t.Fatal("Set fabricated convergence", twin)
 			}
 			status, err := a.GetStatus(ctx)
@@ -95,7 +95,7 @@ func TestVerificationReadObservesWithoutRetryingWrites(t *testing.T) {
 				t.Fatal("verification or write replayed", err)
 			}
 			twin, _ = restarted.GetTwin(ctx)
-			if mode == "matches" && twin.Convergence != "converged" || mode != "matches" && twin.Convergence != "pending" {
+			if mode == "matches" && twin.Convergence != "converged" || mode == "mismatch" && twin.Convergence != "pending" || mode == "uncertain" && twin.Convergence != "unknown" {
 				t.Fatal(twin)
 			}
 			*now = now.Add(10 * time.Minute)

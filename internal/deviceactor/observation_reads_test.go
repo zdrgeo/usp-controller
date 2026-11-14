@@ -59,7 +59,7 @@ func TestObservationReadBootstrapsWriteWithoutInventingConvergence(t *testing.T)
 		t.Fatal(err)
 	}
 	twin, _ := restarted.GetTwin(ctx)
-	if twin.Convergence != "pending" {
+	if twin.Convergence != "unknown" {
 		t.Fatal("Set response fabricated verification", twin)
 	}
 	*now = now.Add(10 * time.Minute)

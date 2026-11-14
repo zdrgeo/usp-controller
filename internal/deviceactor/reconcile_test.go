@@ -71,7 +71,7 @@ func TestManagedReconcileWaitsCoalescesAndVerifies(t *testing.T) {
 		t.Fatal(err)
 	}
 	twin, _ := a.GetTwin(ctx)
-	if twin.Convergence != "pending" {
+	if twin.Convergence != "unknown" {
 		t.Fatal("response fabricated convergence", twin)
 	}
 	if err = a.Tick(ctx); err != nil || len(f.calls) != 1 {
@@ -245,7 +245,7 @@ func TestOldReconcileResponseCannotConvergeNewRevision(t *testing.T) {
 		t.Fatal(err)
 	}
 	twin, _ := a.GetTwin(ctx)
-	if twin.DesiredRevision != 2 || twin.Convergence != "pending" || twin.Reported["Device.Test.Value"].Value.Value != "old" {
+	if twin.DesiredRevision != 2 || twin.Convergence != "unknown" || twin.Reported["Device.Test.Value"].Value.Value != "old" {
 		t.Fatal(twin)
 	}
 	*now = now.Add(time.Second)
