@@ -707,3 +707,13 @@ commit. Partial handoff failures retain the failed event and tail, while failed
 or ambiguous removal commits still prevent command dispatch. Default batch size
 is one; existing stable event identities, receipt retention and delivery semantics
 remain unchanged. Legacy remains the default and schema 9 is unchanged.
+
+
+### Bounded reminder repair lifecycle
+
+An optional [reminder-repair pool](device-reminder-repair.md) now bounds activation
+parallelism across the provisioned cohort. It invokes only idempotent Activate
+turns, keeps sweeps non-overlapping and joins local workers on cancellation. The
+application cancels repair during drain before releasing runtime resources.
+Default remains one worker; legacy, schema 9 and command execution semantics are
+unchanged.

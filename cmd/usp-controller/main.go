@@ -58,6 +58,7 @@ func run() error {
 	var requester api.Requester = c
 	var receive mqtt.Receiver = c.Receive
 	var actorRuntime *canary.Runtime
+	var stopReminderRepair context.CancelFunc
 	var callback *http.Server
 	var projection *fleet.Projection
 	serverErrors := make(chan error, 2)
@@ -99,26 +100,17 @@ func run() error {
 		go func() { serverErrors <- callback.Serve(listener) }()
 		requester = actorRuntime
 		receive = actorRuntime.Receive
-		// Repair existing actors' reminders through Dapr turns after sidecar startup.
+		// Repair reminders through Dapr, with bounded workers and joined shutdown.
+		repairCtx, stopRepair := context.WithCancel(ctx)
+		stopReminderRepair = stopRepair
+		repairDone := make(chan struct{})
 		go func() {
-			timer := time.NewTicker(30 * time.Second)
-			defer timer.Stop()
-			for {
-				for _, id := range actorRuntime.Devices {
-					if ctx.Err() != nil {
-						return
-					}
-					if _, err := actorRuntime.Client.Invoke(ctx, id, "Activate", nil); err != nil {
-						slog.Warn("actor reminder repair", "device", id.AgentID, "error", err)
-					}
-				}
-				select {
-				case <-ctx.Done():
-					return
-				case <-timer.C:
-				}
+			defer close(repairDone)
+			if err := actorRuntime.RunReminderRepair(repairCtx); err != nil && !errors.Is(err, context.Canceled) {
+				slog.Warn("actor reminder repair stopped", "error", err)
 			}
 		}()
+		defer func() { stopRepair(); <-repairDone }()
 	}
 	if cfg.ReplicaMode() {
 		go func() {
@@ -171,6 +163,9 @@ func run() error {
 	}
 	if actorRuntime != nil {
 		actorRuntime.BeginDrain()
+		if stopReminderRepair != nil {
+			stopReminderRepair()
+		}
 	}
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), timeout+5*time.Second)
 	defer shutdownCancel()

@@ -116,6 +116,7 @@ func TestCanaryAsyncEndToEnd(t *testing.T) {
 	}))
 	defer sidecar.Close()
 	cfg := config.Config{EndpointID: "controller", ClientID: "client", Listen: "127.0.0.1:8080", Broker: "tls://localhost:8883", JournalPath: "events", JournalMaxBytes: 1 << 20, RequestTimeoutSeconds: 1, MaxPending: 10, QoS: 1, Agents: map[string]config.Agent{"device": {Topic: "device/topic", Inbox: "controller/device"}, "legacy": {Topic: "legacy/topic", Inbox: "controller/legacy"}}, ActorCanary: &config.ActorCanary{Enabled: true, EventPubsub: "events", EventTopic: "device-events", Tenant: "tenant", Devices: []string{"device"}, DaprURL: sidecar.URL, CallbackListen: "127.0.0.1:8081", LockPath: filepath.Join(t.TempDir(), "canary.lock")}}
+	cfg.ActorCanary.ReminderRepairWorkers = 2
 	cfg.ActorCanary.EventExportsPerTurn = 2
 	cfg.ActorCanary.MaxConcurrentAttempts = 1
 	cfg.ActorCanary.AttemptRatePerSecond = 1
@@ -130,6 +131,9 @@ func TestCanaryAsyncEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer runtime.Close()
+	if runtime.repairWorkers != 2 {
+		t.Fatal("runtime repair worker configuration missing")
+	}
 	for _, identity := range runtime.Devices {
 		body, err := runtime.Client.Invoke(ctx, identity, "GetStatus", nil)
 		var status deviceactor.Status

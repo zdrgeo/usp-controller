@@ -48,6 +48,8 @@ func (t transport) Publish(ctx context.Context, id device.DeviceIdentity, attemp
 }
 
 type Runtime struct {
+	repairWorkers     int
+	repairRunning     atomic.Bool
 	AttemptBudget     *device.AttemptBudget
 	AttemptRateBudget *device.AttemptRateBudget
 	Metrics           *actormetrics.Registry
@@ -88,7 +90,7 @@ func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, 
 		lock.Close()
 		return nil, fmt.Errorf("single-host canary lock unavailable: %w", err)
 	}
-	rt := &Runtime{Metrics: actormetrics.New(), Devices: map[string]device.DeviceIdentity{}, Client: &deviceactor.Client{Endpoint: a.DaprURL, Token: apiToken}, legacy: legacy, controllerID: cfg.EndpointID, routes: map[string]string{}, lock: lock, mqtt: mqtt, replica: a.Replica, eventPubsub: a.EventPubsub}
+	rt := &Runtime{repairWorkers: a.ReminderRepairWorkers, Metrics: actormetrics.New(), Devices: map[string]device.DeviceIdentity{}, Client: &deviceactor.Client{Endpoint: a.DaprURL, Token: apiToken}, legacy: legacy, controllerID: cfg.EndpointID, routes: map[string]string{}, lock: lock, mqtt: mqtt, replica: a.Replica, eventPubsub: a.EventPubsub}
 	fail := func(err error) (*Runtime, error) { rt.Close(); return nil, err }
 	for id, agent := range cfg.Agents {
 		rt.routes[id] = agent.Topic

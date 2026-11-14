@@ -343,3 +343,12 @@ and commit removal of a successful prefix once. Partial failures retain the tail
 failed/ambiguous removal commits still stop dispatch. This improves healthy
 outbox drain opportunities without another worker or state schema change. Legacy
 remains the default and schema 9 is unchanged.
+
+
+## Optional bounded reminder repair workers
+
+The runtime now owns a [joined reminder-repair loop](device-reminder-repair.md).
+`reminder_repair_workers` configures 1–16 workers, default one, without overlapping
+sweeps or a goroutine per device. Shutdown cancels and joins local repair work;
+remote activation remains idempotent and non-dispatching. Legacy remains the
+default and schema 9 is unchanged.

@@ -55,7 +55,10 @@ func (f FleetProjection) Normalized() FleetProjection {
 	return f
 }
 
+const MaxReminderRepairWorkers = 16
+
 type ActorCanary struct {
+	ReminderRepairWorkers    int                            `json:"reminder_repair_workers,omitempty"`
 	EventExportsPerTurn      int                            `json:"event_exports_per_turn,omitempty"`
 	DispatchWithEventBacklog bool                           `json:"dispatch_with_event_backlog,omitempty"`
 	AttemptRatePerSecond     int                            `json:"attempt_rate_per_second,omitempty"`
@@ -175,6 +178,9 @@ func (c Config) Validate() error {
 		}
 	}
 	if a := c.ActorCanary; a != nil {
+		if a.ReminderRepairWorkers < 0 || a.ReminderRepairWorkers > MaxReminderRepairWorkers || (a.ReminderRepairWorkers != 0 && !a.Enabled) {
+			return fmt.Errorf("reminder_repair_workers requires actor mode and 1–%d (or zero for default)", MaxReminderRepairWorkers)
+		}
 		if a.EventExportsPerTurn < 0 || a.EventExportsPerTurn > deviceactor.MaxEventExportsPerTurn || (a.EventExportsPerTurn != 0 && !a.Enabled) {
 			return fmt.Errorf("event_exports_per_turn requires actor mode and 1–%d (or zero for default)", deviceactor.MaxEventExportsPerTurn)
 		}
