@@ -25,6 +25,7 @@ func (in CommandInput) Domain() (device.CommandRequest, error) {
 }
 
 type CommandOutput struct {
+	MutationOutcomeAt      *time.Time                     `json:"mutation_outcome_at,omitempty"`
 	AttemptedAt            *time.Time                     `json:"attempted_at,omitempty"`
 	AttemptSequence        uint64                         `json:"attempt_sequence,omitempty"`
 	UnknownAcknowledgement *device.UnknownAcknowledgement `json:"unknown_acknowledgement,omitempty"`
@@ -48,6 +49,10 @@ func commandOutput(c device.DeviceCommand) (CommandOutput, error) {
 	if !c.AttemptedAt.IsZero() {
 		at := c.AttemptedAt
 		out.AttemptedAt = &at
+	}
+	if !c.MutationOutcomeAt.IsZero() {
+		at := c.MutationOutcomeAt
+		out.MutationOutcomeAt = &at
 	}
 	var err error
 	if c.Request != nil {

@@ -152,6 +152,7 @@ type AcknowledgeUnknownRequest struct {
 }
 
 type DeviceCommand struct {
+	MutationOutcomeAt      time.Time
 	AttemptedAt            time.Time
 	AttemptSequence        uint64
 	UnknownAcknowledgement *UnknownAcknowledgement

@@ -687,3 +687,13 @@ The response callback now supplies controller receive time so valid correlated
 Get results can update the twin through the production callback path. No new
 persistent command kind, automatic retry or schema change is introduced. Legacy
 remains the default and projection remains opt-in.
+
+
+### Definitive mutation outcome freshness
+
+Schema 9 records [mutation outcome time](device-mutation-outcomes.md) atomically
+with definitive responses or OperationComplete evidence. It extends the derived
+observation barrier so in-flight observations and earlier-started Gets cannot
+establish fresh post-outcome state. Acceptance, duplicates and late bookkeeping
+do not move it. Older snapshots upgrade without invented historical times; older
+binaries reject schema 9. Legacy remains the default.

@@ -80,7 +80,7 @@ func (a *Actor) projectGet(s *snapshot, c storedCommand, req *usp.Request, r dev
 	if r.ReceivedAt.After(s.LastContact) {
 		s.LastContact = r.ReceivedAt.UTC()
 	}
-	if c.AttemptSequence == 0 || c.AttemptSequence != s.AttemptSequence || c.AttemptedAt.IsZero() || r.ReceivedAt.Before(c.AttemptedAt) || !now.Before(c.AttemptedAt.Add(a.opts.Freshness)) {
+	if (!s.observationBarrier.IsZero() && !c.AttemptedAt.After(s.observationBarrier)) || c.AttemptSequence == 0 || c.AttemptSequence != s.AttemptSequence || c.AttemptedAt.IsZero() || r.ReceivedAt.Before(c.AttemptedAt) || !now.Before(c.AttemptedAt.Add(a.opts.Freshness)) {
 		return
 	}
 	values := map[string]device.ParameterValue{}

@@ -161,9 +161,9 @@ Global site routing and value redaction remain future work. A fleet projection
 must be explicitly eventually consistent and must never claim to be the actor's
 current authoritative state.
 
-New saves use snapshot schema **8**, preserving schema 1/2/3/4/5/6/7 state on upgrade,
+New saves use snapshot schema **9**, preserving schema 1/2/3/4/5/6/7/8 state on upgrade,
 recording generated command provenance, audited operator acknowledgement of
-unknown outcomes and durable per-device execution control. See the [operator workflow](device-actor-canary.md#operator-acknowledgement-of-an-unknown-outcome). See [Get observations](device-get-observations.md) for durable attempt provenance and opt-in reported-twin updates. [Bounded observation reads](device-observation-reads.md) are separately opt-in. [Post-write verification reads](device-verification-reads.md) are also separately opt-in. Older binaries reject schema 8; binary
+unknown outcomes and durable per-device execution control. See the [operator workflow](device-actor-canary.md#operator-acknowledgement-of-an-unknown-outcome). See [Get observations](device-get-observations.md) for durable attempt provenance and opt-in reported-twin updates. [Bounded observation reads](device-observation-reads.md) are separately opt-in. [Post-write verification reads](device-verification-reads.md) are also separately opt-in. [Mutation outcome times](device-mutation-outcomes.md) extend observation ordering. Older binaries reject schema 9; binary
 rollback over upgraded state is unsupported. Drain senders and use a reviewed
 state migration or roll forward. Merely clearing state can lose attempts and
 receipts and is not a rollback procedure. Existing bounded retention limitations
@@ -323,3 +323,13 @@ It uses ordinary command IDs, deadlines, receipts and dispatch gates; it does no
 enable reconciliation or retry attempted reads. Response callbacks now assign
 controller receive time, allowing their correlated Get evidence to reach the twin
 under the existing projection checks. Legacy and schema 8 remain unchanged.
+
+
+## Definitive mutation outcome barrier
+
+New definitive mutation results and OperationComplete evidence now retain a
+[controller outcome time](device-mutation-outcomes.md). Observations made during
+an attempt cannot establish fresh state after that outcome, and Gets started
+before it remain ineligible even if their response arrives later. Schema 9
+preserves older snapshots without inventing historical outcome times; older
+binaries reject it. Legacy remains the default.

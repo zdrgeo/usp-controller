@@ -11,6 +11,7 @@ type CommandQuery struct {
 }
 
 type CommandSummary struct {
+	MutationOutcomeAt    *time.Time   `json:"mutation_outcome_at,omitempty"`
 	AttemptedAt          *time.Time   `json:"attempted_at,omitempty"`
 	AttemptSequence      uint64       `json:"attempt_sequence,omitempty"`
 	RequestID            RequestID    `json:"request_id"`

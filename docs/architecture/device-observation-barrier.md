@@ -6,8 +6,9 @@ state, including paths beyond the explicit target. The barrier therefore applies
 to the whole reported twin. Legacy remains the default runtime; existing actor
 allowlists, reconciliation policy and dispatch permissions are unchanged.
 
-The boundary is the durable begin commit, not MQTT acceptance or a successful USP
-response. A committed attempt may have reached the device even if its reply was
+The initial boundary is the durable begin commit, not MQTT acceptance.
+[Definitive outcomes](device-mutation-outcomes.md) now advance it again when
+processed, invalidating observations collected during the attempt. A committed attempt may have reached the device even if its reply was
 lost. A failed begin that did not commit leaves freshness unchanged. A committed
 begin with an ambiguous reply invalidates earlier observations even though the
 controller does not publish in that invocation. Failure, timeout, cancellation of
@@ -16,13 +17,15 @@ later work and operator unknown acknowledgement do not restore old freshness.
 The barrier is rebuilt on each load from retained command attempt timestamps and
 sequences. It uses the greatest known mutation timestamp, so a later attempt with
 a backwards controller clock cannot lower it. Read-only command attempts do not
-advance it. No extra persistent authority, schema field, save or backend retry is
-introduced. Snapshot schema 8 and fencing protocols are unchanged.
+advance it. Begin times already exist in attempt provenance. Schema 9 now records
+[mutation outcome times](device-mutation-outcomes.md) with their evidence.
+No extra backend operation or retry is introduced; fencing protocols are unchanged.
 
 ## Twin and reconciliation behavior
 
 An observation is eligible only if its ordinary freshness window is open and its
-controller receive time is strictly later than the mutation barrier. Equal times
+controller receive time is strictly later than the mutation barrier. Get projection
+also requires its attempt start to be strictly later than that barrier. Equal times
 are conservative uncertainty. Reconciliation planning, queued write validation,
 bootstrap-read planning and convergence use the same rule. A new desired revision
 or acknowledgement alone cannot authorize a write using pre-mutation observations.

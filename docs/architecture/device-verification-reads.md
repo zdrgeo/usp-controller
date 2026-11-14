@@ -47,15 +47,16 @@ Read-disabled policies retain the existing status behavior.
 
 ## Storage and rollout
 
-Current writers use schema 8; schemas 1–7 load and upgrade on the next save.
+Verification provenance introduced schema 8; current writers use
+[schema 9](device-mutation-outcomes.md). Schemas 1–8 load and upgrade on the next save.
 The loader validates verification provenance against its reserved identity,
 revision, Get payload and successful originating write, and enforces attempt
 ordering when a verification attempt exists. Provenance cannot coexist with
 bootstrap or write provenance or be hidden in an older schema.
 
-Older binaries reject schema 8. Drain senders and roll forward or use a reviewed
+Older binaries reject schema 9. Drain senders and roll forward or use a reviewed
 state migration rather than rolling an older writer over upgraded snapshots.
-All actor saves use the new schema even with verification disabled. Storage
+All actor saves use schema 9 even with verification disabled. Storage
 backend and fencing protocols are unchanged.
 
 Validation focuses on read-to-convergence behavior, mismatches and uncertainty

@@ -94,6 +94,7 @@ type receipt struct {
 	Revision          uint64
 }
 type storedCommand struct {
+	MutationOutcomeAt      time.Time
 	AttemptedAt            time.Time
 	AttemptSequence        uint64
 	UnknownAcknowledgement *device.UnknownAcknowledgement `json:",omitempty"`
@@ -132,7 +133,7 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &snapshot{Schema: 8, Execution: &device.ExecutionState{}, Identity: a.id, Desired: map[string]device.ParameterValue{}, Reported: map[string]device.Observation{}, Receipts: map[device.RequestID]receipt{}, Commands: map[device.RequestID]storedCommand{}}
+	s := &snapshot{Schema: 9, Execution: &device.ExecutionState{}, Identity: a.id, Desired: map[string]device.ParameterValue{}, Reported: map[string]device.Observation{}, Receipts: map[device.RequestID]receipt{}, Commands: map[device.RequestID]storedCommand{}}
 	s.Inbox = map[string]string{}
 	if len(b) == 0 {
 		return s, nil
@@ -144,7 +145,7 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 	if err = json.Unmarshal(b, s); err != nil {
 		return nil, fmt.Errorf("decode actor state: %w", err)
 	}
-	if (s.Schema >= 2 && s.Inbox == nil) || (s.Schema != 1 && s.Schema != 2 && s.Schema != 3 && s.Schema != 4 && s.Schema != 5 && s.Schema != 6 && s.Schema != 7 && s.Schema != 8) || s.Identity != a.id || s.Desired == nil || s.Reported == nil || s.Receipts == nil || s.Commands == nil {
+	if (s.Schema >= 2 && s.Inbox == nil) || (s.Schema != 1 && s.Schema != 2 && s.Schema != 3 && s.Schema != 4 && s.Schema != 5 && s.Schema != 6 && s.Schema != 7 && s.Schema != 8 && s.Schema != 9) || s.Identity != a.id || s.Desired == nil || s.Reported == nil || s.Receipts == nil || s.Commands == nil {
 		return nil, fmt.Errorf("unsupported or inconsistent actor state")
 	}
 	if len(s.Receipts) > a.opts.MaxReceipts || len(s.Commands) > a.opts.MaxCommands || len(s.Desired) > a.opts.MaxParameters || len(s.Reported) > a.opts.MaxParameters {
@@ -157,7 +158,10 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 	if err := validateAttempts(s, sourceSchema); err != nil {
 		return nil, err
 	}
-	s.Schema = 8 // upgrade on the next atomic save; older binaries must reject this state
+	if err := validateMutationOutcomes(s, sourceSchema); err != nil {
+		return nil, err
+	}
+	s.Schema = 9 // upgrade on the next atomic save; older binaries must reject this state
 	if s.Inbox == nil {
 		s.Inbox = map[string]string{}
 	}
@@ -264,6 +268,9 @@ func (a *Actor) saveWithBudget(ctx context.Context, s *snapshot, maxBytes int) e
 	return a.backend.Save(ctx, b)
 }
 func (a *Actor) encodeSnapshot(s *snapshot, maxBytes int) ([]byte, error) {
+	if err := validateMutationOutcomes(s, s.Schema); err != nil {
+		return nil, err
+	}
 	if err := validateAttempts(s, s.Schema); err != nil {
 		return nil, err
 	}

@@ -101,3 +101,9 @@ actor turn. It does not provide a searchable historical archive, reclaim capacit
 prune receipts, guarantee convergence, or replace the eventually consistent fleet
 projection. Snapshot schema 5, delivery guarantees and the default legacy runtime
 are unchanged.
+
+
+New definitive mutations also expose optional `mutation_outcome_at` in summaries
+and individual reads. This controller processing timestamp participates in the
+view fingerprint; missing values on historical evidence are not synthesized. See
+[mutation outcomes](device-mutation-outcomes.md) for schema 9 and rollout limits.

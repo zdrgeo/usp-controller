@@ -176,6 +176,7 @@ func (a *Actor) HandleNotify(ctx context.Context, r device.DeviceNotification) (
 			// must not consume the headroom for the current unresolved attempt.
 			completionPriority = c.UnknownAcknowledgement == nil
 			c.Completion = payload
+			a.markMutationOutcome(s, &c, req)
 			s.Commands[id] = c
 			break
 		}
