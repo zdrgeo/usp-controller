@@ -116,6 +116,7 @@ func TestCanaryAsyncEndToEnd(t *testing.T) {
 	}))
 	defer sidecar.Close()
 	cfg := config.Config{EndpointID: "controller", ClientID: "client", Listen: "127.0.0.1:8080", Broker: "tls://localhost:8883", JournalPath: "events", JournalMaxBytes: 1 << 20, RequestTimeoutSeconds: 1, MaxPending: 10, QoS: 1, Agents: map[string]config.Agent{"device": {Topic: "device/topic", Inbox: "controller/device"}, "legacy": {Topic: "legacy/topic", Inbox: "controller/legacy"}}, ActorCanary: &config.ActorCanary{Enabled: true, EventPubsub: "events", EventTopic: "device-events", Tenant: "tenant", Devices: []string{"device"}, DaprURL: sidecar.URL, CallbackListen: "127.0.0.1:8081", LockPath: filepath.Join(t.TempDir(), "canary.lock")}}
+	cfg.ActorCanary.EventExportsPerTurn = 2
 	cfg.ActorCanary.MaxConcurrentAttempts = 1
 	cfg.ActorCanary.AttemptRatePerSecond = 1
 	cfg.ActorCanary.AttemptRateBurst = 256
@@ -277,6 +278,12 @@ func TestCanaryAsyncEndToEnd(t *testing.T) {
 	if len(mqtt.sends) != 2 {
 		t.Fatal("missing NotifyResp")
 	}
+	secondNotify := proto.Clone(notify).(*usp.Msg)
+	secondNotify.Header.MsgId = "n-batch"
+	secondWire, _ := protocol.Encode("device", "controller", secondNotify)
+	if err = runtime.Receive(ctx, secondWire, "device/topic", "device"); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err = runtime.Client.Invoke(ctx, runtime.Devices["device"], "Tick", nil); err != nil {
 		t.Fatal(err)
@@ -284,8 +291,8 @@ func TestCanaryAsyncEndToEnd(t *testing.T) {
 	mu.Lock()
 	count := exports
 	mu.Unlock()
-	if count != 1 {
-		t.Fatal("outbox not exported", count)
+	if count != 2 {
+		t.Fatal("configured batch did not export both events", count)
 	}
 	if err = runtime.Receive(ctx, wire, "device/topic", "device"); err != nil {
 		t.Fatal(err)
@@ -296,7 +303,7 @@ func TestCanaryAsyncEndToEnd(t *testing.T) {
 	mu.Lock()
 	count = exports
 	mu.Unlock()
-	if count != 1 || len(mqtt.sends) != 3 {
+	if count != 2 || len(mqtt.sends) != 4 {
 		t.Fatal("duplicate receipt failed", count, len(mqtt.sends))
 	}
 	// Non-cohort notifications still go through Journal.
@@ -307,7 +314,7 @@ func TestCanaryAsyncEndToEnd(t *testing.T) {
 	legacyCtx, cancel := context.WithTimeout(ctx, 10*time.Millisecond)
 	defer cancel()
 	_, err = runtime.Request(legacyCtx, "legacy", &usp.Request{ReqType: &usp.Request_Get{Get: &usp.Get{}}})
-	if !errors.Is(err, context.DeadlineExceeded) || len(mqtt.sends) != 5 {
+	if !errors.Is(err, context.DeadlineExceeded) || len(mqtt.sends) != 6 {
 		t.Fatal("non-cohort legacy path changed", err)
 	}
 }

@@ -697,3 +697,13 @@ observation barrier so in-flight observations and earlier-started Gets cannot
 establish fresh post-outcome state. Acceptance, duplicates and late bookkeeping
 do not move it. Older snapshots upgrade without invented historical times; older
 binaries reject schema 9. Legacy remains the default.
+
+
+### Bounded event-export batches
+
+Optional [FIFO export batches](device-event-batches.md) now drain multiple pending
+events per reminder under one shared publication budget and one prefix-removal
+commit. Partial handoff failures retain the failed event and tail, while failed
+or ambiguous removal commits still prevent command dispatch. Default batch size
+is one; existing stable event identities, receipt retention and delivery semantics
+remain unchanged. Legacy remains the default and schema 9 is unchanged.

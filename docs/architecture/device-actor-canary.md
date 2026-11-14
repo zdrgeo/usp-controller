@@ -183,7 +183,8 @@ time controls freshness; this does not establish device/source ordering.
 Non-cohort devices retain the legacy Journal/NotifyResp path. Preserve the existing
 journal as an archive; never delete it as part of cutover.
 
-Each reminder exports at most one event, even while MQTT is offline or a command
+Each reminder exports a [bounded FIFO batch](device-event-batches.md), default one
+event, even while MQTT is offline or a command
 is unknown. Publication failure retains the head and delays further command dispatch.
 Successful handoff removes it atomically. Lost handoff or removal acknowledgments
 may produce duplicates. Consumers deduplicate using `(actor_id, epoch, sequence)`.

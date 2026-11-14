@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -195,24 +196,41 @@ func (a *Actor) HandleNotify(ctx context.Context, r device.DeviceNotification) (
 	return device.NotifyReceipt{MessageID: mid}, nil
 }
 
-// One bounded export per reminder, even when command dispatch is blocked/offline.
-// A lost publication or removal acknowledgement can duplicate this stable event.
-// handoffFailed is true only when Publish failed before any local state mutation;
-// a failed removal commit must never permit dispatch from the mutated snapshot.
-func (a *Actor) exportOne(ctx context.Context, s *snapshot) (handoffFailed bool, err error) {
+const MaxEventExportsPerTurn = 32
+
+// One FIFO batch per turn shares a single publication deadline and removal save.
+// handoffFailed permits optional dispatch only when the remaining snapshot is
+// trustworthy: no prefix was removed, or prefix removal committed successfully.
+func (a *Actor) exportBatch(ctx context.Context, s *snapshot) (handoffFailed bool, err error) {
 	if a.publisher == nil || len(s.Outbox) == 0 {
 		return false, nil
 	}
-	e := s.Outbox[0]
-	msg := new(usp.Msg)
-	if err := proto.Unmarshal(e.Payload, msg); err != nil {
-		return false, err
-	}
 	publishCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if err := a.publisher.Publish(publishCtx, device.DeviceEvent{Identity: a.id, Epoch: e.Epoch, Sequence: e.Sequence, SchemaVersion: "1", ReceivedAt: e.ReceivedAt, Message: msg}); err != nil {
-		return true, err
+	count := 0
+	var exportErr error
+	for count < min(a.opts.EventExportsPerTurn, len(s.Outbox)) {
+		if exportErr = publishCtx.Err(); exportErr != nil {
+			handoffFailed = true
+			break
+		}
+		e := s.Outbox[count]
+		msg := new(usp.Msg)
+		if exportErr = proto.Unmarshal(e.Payload, msg); exportErr != nil {
+			break
+		}
+		exportErr = a.publisher.Publish(publishCtx, device.DeviceEvent{Identity: a.id, Epoch: e.Epoch, Sequence: e.Sequence, SchemaVersion: "1", ReceivedAt: e.ReceivedAt, Message: msg})
+		if exportErr != nil {
+			handoffFailed = true
+			break
+		}
+		count++
 	}
-	s.Outbox = s.Outbox[1:]
-	return false, a.save(ctx, s)
+	if count > 0 {
+		s.Outbox = s.Outbox[count:]
+		if saveErr := a.save(ctx, s); saveErr != nil {
+			return false, errors.Join(exportErr, saveErr)
+		}
+	}
+	return handoffFailed, exportErr
 }

@@ -39,6 +39,7 @@ type Backend interface {
 }
 
 type Options struct {
+	EventExportsPerTurn                               int
 	DispatchWithEventBacklog                          bool
 	AttemptRateBudget                                 *device.AttemptRateBudget
 	AttemptBudget                                     *device.AttemptBudget
@@ -50,7 +51,7 @@ type Options struct {
 }
 
 func DefaultOptions() Options {
-	return Options{MaxBytes: 1 << 20, MaxReceipts: 1024, MaxCommands: 64, MaxParameters: 1024, Freshness: 5 * time.Minute, Now: time.Now}
+	return Options{EventExportsPerTurn: 1, MaxBytes: 1 << 20, MaxReceipts: 1024, MaxCommands: 64, MaxParameters: 1024, Freshness: 5 * time.Minute, Now: time.Now}
 }
 
 type Actor struct {
@@ -63,6 +64,12 @@ type Actor struct {
 }
 
 func New(id device.DeviceIdentity, backend Backend, opts Options) (*Actor, error) {
+	if opts.EventExportsPerTurn == 0 {
+		opts.EventExportsPerTurn = 1
+	}
+	if opts.EventExportsPerTurn < 1 || opts.EventExportsPerTurn > MaxEventExportsPerTurn {
+		return nil, ErrInvalid
+	}
 	if id.Tenant == "" || id.ControllerID == "" || id.AgentID == "" || backend == nil || opts.Now == nil || opts.MaxBytes <= 0 || opts.MaxReceipts <= 0 || opts.MaxCommands <= 0 || opts.MaxParameters <= 0 || opts.Freshness <= 0 {
 		return nil, ErrInvalid
 	}

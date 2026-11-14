@@ -96,13 +96,13 @@ func (a *Actor) Tick(ctx context.Context) (resultErr error) {
 			return err
 		}
 	}
-	handoffFailed, exportErr := a.exportOne(ctx, s)
+	handoffFailed, exportErr := a.exportBatch(ctx, s)
 	if exportErr != nil {
 		if !a.opts.DispatchWithEventBacklog || !handoffFailed || ctx.Err() != nil {
 			return exportErr
 		}
-		// Publish failure leaves s unchanged. Keep the event and preserve the
-		// export error even if command work succeeds or adds another failure.
+		// Failed event remains pending; any successful prefix removal was committed.
+		// Preserve the export error even if command work succeeds or adds another failure.
 		defer func() { resultErr = errors.Join(exportErr, resultErr) }()
 	}
 	if a.transport == nil || s.Execution.Paused {

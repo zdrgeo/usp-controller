@@ -6,12 +6,15 @@ to false; legacy remains the default runtime. Direct actor users can set
 `Options.DispatchWithEventBacklog`. This changes scheduling only, not event
 retention, durability or acknowledgement requirements.
 
-Each Tick still performs maintenance and tries to export the oldest event first.
+Each Tick still performs maintenance and tries to export the oldest events first
+using a [bounded FIFO batch](device-event-batches.md) (default one).
 If the publisher fails, the stored event and notification receipt remain intact.
 With the option enabled and the parent context still active, the actor can then
-consider command work from that unchanged snapshot. Existing pause, uncertainty,
+consider command work from the confirmed remaining snapshot. Existing pause, uncertainty,
 readiness, policy, deadline, completion-capacity, concurrency and rate gates still
-apply. There is at most one event handoff and one command publication per turn.
+apply. There is one bounded event batch and at most one command publication per
+turn. A successfully handed-off prefix is removed in one confirmed save before
+command progress; a failed removal still stops the turn.
 The option does not create a worker, skip older events, retry the handoff within
 the turn or bypass durable begin-before-publish.
 

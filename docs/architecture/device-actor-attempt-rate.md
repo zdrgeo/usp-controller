@@ -24,7 +24,7 @@ move the refill boundary backwards; idle refill is capped at burst capacity.
 
 ## Dispatch boundary
 
-Existing maintenance and one event export run first. Per-device uncertainty,
+Existing maintenance and a [bounded event batch](device-event-batches.md) run first. Per-device uncertainty,
 readiness, pause, generated-command policy checks, completion capacity and the
 optional concurrent-attempt permit still gate execution. After acquiring any
 concurrency permit and rechecking the durable deadline, the actor tries to reserve

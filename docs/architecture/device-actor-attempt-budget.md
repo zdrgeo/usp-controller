@@ -18,7 +18,7 @@ by the actor constructor.
 
 ## Execution boundary
 
-Each Tick still handles deadline/attempt recovery and one event export before
+Each Tick still handles deadline/attempt recovery and a [bounded event batch](device-event-batches.md) before
 considering new command publication. Existing per-device uncertainty, readiness,
 policy, reconciliation and completion-capacity checks apply first. An eligible
 actor then tries to acquire a local permit without waiting or creating another

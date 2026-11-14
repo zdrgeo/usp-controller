@@ -333,3 +333,13 @@ an attempt cannot establish fresh state after that outcome, and Gets started
 before it remain ineligible even if their response arrives later. Schema 9
 preserves older snapshots without inventing historical outcome times; older
 binaries reject it. Legacy remains the default.
+
+
+## Optional bounded event-export batches
+
+The actor canary can configure [event_exports_per_turn](device-event-batches.md)
+from 1–32, default one. Sequential FIFO handoffs share one publication deadline
+and commit removal of a successful prefix once. Partial failures retain the tail;
+failed/ambiguous removal commits still stop dispatch. This improves healthy
+outbox drain opportunities without another worker or state schema change. Legacy
+remains the default and schema 9 is unchanged.
