@@ -728,3 +728,12 @@ dispatch. Convergence shares its typed observation checks; controller-clock
 rollback cannot make future-dated evidence eligible for reconciliation. Policy
 withdrawal hides path names while retaining an aggregate count. Legacy remains
 the default and schema 9 is unchanged.
+
+
+### Configurable maintenance cadence
+
+An optional [maintenance interval](device-maintenance-cadence.md) now controls
+recurring Tick registration for the cohort, preserving the 10-second default.
+Matching registrations are not reset, and conflicting registrations require
+explicit reviewed replacement rather than silent mutation. Command/event budgets,
+absolute deadlines and snapshot schema 9 are unchanged. Legacy remains the default.

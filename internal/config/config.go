@@ -56,26 +56,39 @@ func (f FleetProjection) Normalized() FleetProjection {
 }
 
 const MaxReminderRepairWorkers = 16
+const DefaultMaintenanceIntervalSeconds = 10
+const MaxMaintenanceIntervalSeconds = 300
 
 type ActorCanary struct {
-	ReminderRepairWorkers    int                            `json:"reminder_repair_workers,omitempty"`
-	EventExportsPerTurn      int                            `json:"event_exports_per_turn,omitempty"`
-	DispatchWithEventBacklog bool                           `json:"dispatch_with_event_backlog,omitempty"`
-	AttemptRatePerSecond     int                            `json:"attempt_rate_per_second,omitempty"`
-	AttemptRateBurst         int                            `json:"attempt_rate_burst,omitempty"`
-	MaxConcurrentAttempts    int                            `json:"max_concurrent_attempts,omitempty"`
-	CompletionReserve        *deviceactor.CompletionReserve `json:"completion_reserve,omitempty"`
-	Fleet                    *FleetProjection               `json:"fleet,omitempty"`
-	Twin                     *device.TwinPolicy             `json:"twin,omitempty"`
-	Replica                  *Replica                       `json:"replica,omitempty"`
-	EventPubsub              string                         `json:"event_pubsub"`
-	EventTopic               string                         `json:"event_topic"`
-	Enabled                  bool                           `json:"enabled"`
-	Tenant                   string                         `json:"tenant"`
-	Devices                  []string                       `json:"devices"`
-	DaprURL                  string                         `json:"dapr_url"`
-	CallbackListen           string                         `json:"callback_listen"`
-	LockPath                 string                         `json:"lock_path"`
+	MaintenanceIntervalSeconds int                            `json:"maintenance_interval_seconds,omitempty"`
+	ReminderRepairWorkers      int                            `json:"reminder_repair_workers,omitempty"`
+	EventExportsPerTurn        int                            `json:"event_exports_per_turn,omitempty"`
+	DispatchWithEventBacklog   bool                           `json:"dispatch_with_event_backlog,omitempty"`
+	AttemptRatePerSecond       int                            `json:"attempt_rate_per_second,omitempty"`
+	AttemptRateBurst           int                            `json:"attempt_rate_burst,omitempty"`
+	MaxConcurrentAttempts      int                            `json:"max_concurrent_attempts,omitempty"`
+	CompletionReserve          *deviceactor.CompletionReserve `json:"completion_reserve,omitempty"`
+	Fleet                      *FleetProjection               `json:"fleet,omitempty"`
+	Twin                       *device.TwinPolicy             `json:"twin,omitempty"`
+	Replica                    *Replica                       `json:"replica,omitempty"`
+	EventPubsub                string                         `json:"event_pubsub"`
+	EventTopic                 string                         `json:"event_topic"`
+	Enabled                    bool                           `json:"enabled"`
+	Tenant                     string                         `json:"tenant"`
+	Devices                    []string                       `json:"devices"`
+	DaprURL                    string                         `json:"dapr_url"`
+	CallbackListen             string                         `json:"callback_listen"`
+	LockPath                   string                         `json:"lock_path"`
+}
+
+// MaintenancePeriod preserves the existing cadence when no override is supplied.
+// Config.Validate must run before a nonzero configured period is used.
+func (a ActorCanary) MaintenancePeriod() time.Duration {
+	seconds := a.MaintenanceIntervalSeconds
+	if seconds == 0 {
+		seconds = DefaultMaintenanceIntervalSeconds
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 type Config struct {
@@ -178,6 +191,9 @@ func (c Config) Validate() error {
 		}
 	}
 	if a := c.ActorCanary; a != nil {
+		if a.MaintenanceIntervalSeconds < 0 || a.MaintenanceIntervalSeconds > MaxMaintenanceIntervalSeconds || (a.MaintenanceIntervalSeconds != 0 && !a.Enabled) {
+			return fmt.Errorf("maintenance_interval_seconds requires actor mode and 1–%d (or zero for default)", MaxMaintenanceIntervalSeconds)
+		}
 		if a.ReminderRepairWorkers < 0 || a.ReminderRepairWorkers > MaxReminderRepairWorkers || (a.ReminderRepairWorkers != 0 && !a.Enabled) {
 			return fmt.Errorf("reminder_repair_workers requires actor mode and 1–%d (or zero for default)", MaxReminderRepairWorkers)
 		}

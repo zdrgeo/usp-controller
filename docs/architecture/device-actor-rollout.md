@@ -362,3 +362,13 @@ future-dated and mutation-invalidated observations without exposing values or
 triggering work. Current policy controls path visibility. Convergence uses the
 same observation classification, and future-dated evidence cannot authorize
 reconciliation after clock rollback. Legacy and schema 9 are unchanged.
+
+
+## Optional maintenance cadence
+
+The actor canary can set [maintenance_interval_seconds](device-maintenance-cadence.md)
+to 1–300 seconds, default 10. Runtime uses it consistently across snapshot profiles
+and preserves deterministic reminder staggering. Existing mismatched registrations
+are not overwritten; coordinate drain and explicit administrative replacement
+before changing a live cohort. Persisted deadlines, schema 9 and legacy defaults
+are unchanged.

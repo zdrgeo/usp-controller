@@ -102,11 +102,19 @@ func TestCanaryAsyncEndToEnd(t *testing.T) {
 			w.WriteHeader(204)
 		case strings.HasSuffix(r.URL.Path, "/reminders"):
 			if reminders[id] {
-				w.Write([]byte(`{"reminders":[{"name":"maintenance-v1","period":"@every 10s"}]}`))
+				w.Write([]byte(`{"reminders":[{"name":"maintenance-v1","period":"@every 7s"}]}`))
 			} else {
 				w.Write([]byte(`{"reminders":[]}`))
 			}
 		case strings.HasSuffix(r.URL.Path, "/reminders/maintenance-v1"):
+			var reminder map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&reminder); err != nil {
+				t.Error(err)
+			}
+			due, err := time.ParseDuration(reminder["dueTime"])
+			if err != nil || due <= 0 || due > 7*time.Second || reminder["period"] != "7s" || reminder["ttl"] != "" {
+				t.Error("configured cadence/staggering not used", reminder)
+			}
 			reminders[id] = true
 			w.WriteHeader(204)
 		default:
@@ -116,6 +124,7 @@ func TestCanaryAsyncEndToEnd(t *testing.T) {
 	}))
 	defer sidecar.Close()
 	cfg := config.Config{EndpointID: "controller", ClientID: "client", Listen: "127.0.0.1:8080", Broker: "tls://localhost:8883", JournalPath: "events", JournalMaxBytes: 1 << 20, RequestTimeoutSeconds: 1, MaxPending: 10, QoS: 1, Agents: map[string]config.Agent{"device": {Topic: "device/topic", Inbox: "controller/device"}, "legacy": {Topic: "legacy/topic", Inbox: "controller/legacy"}}, ActorCanary: &config.ActorCanary{Enabled: true, EventPubsub: "events", EventTopic: "device-events", Tenant: "tenant", Devices: []string{"device"}, DaprURL: sidecar.URL, CallbackListen: "127.0.0.1:8081", LockPath: filepath.Join(t.TempDir(), "canary.lock")}}
+	cfg.ActorCanary.MaintenanceIntervalSeconds = 7
 	cfg.ActorCanary.ReminderRepairWorkers = 2
 	cfg.ActorCanary.EventExportsPerTurn = 2
 	cfg.ActorCanary.MaxConcurrentAttempts = 1

@@ -115,6 +115,7 @@ func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, 
 		}
 		rt.Metrics.SetAttemptRateBudget(rt.AttemptRateBudget)
 	}
+	period := a.MaintenancePeriod()
 	var actors []*deviceactor.Actor
 	for _, id := range a.Devices {
 		identity := device.DeviceIdentity{Tenant: a.Tenant, ControllerID: cfg.EndpointID, AgentID: id}
@@ -128,13 +129,13 @@ func New(cfg config.Config, mqtt MQTT, legacy *controller.Controller, appToken, 
 		if a.CompletionReserve != nil {
 			opts.CompletionReserve = *a.CompletionReserve
 		}
-		backend, err := deviceactor.NewDaprBackend(a.DaprURL, nil, apiToken, identity, 10*time.Second, opts.MaxBytes)
+		backend, err := deviceactor.NewDaprBackend(a.DaprURL, nil, apiToken, identity, period, opts.MaxBytes)
 		if err != nil {
 			return fail(err)
 		}
 		var stateBackend deviceactor.Backend = backend
 		if a.Replica != nil {
-			stateBackend, err = deviceactor.NewEtcdSnapshotBackendEndpoints(a.DaprURL, apiToken, a.Replica.SnapshotEndpoints(), a.Replica.SnapshotEtcdPrefix, os.Getenv("ETCD_AUTH_TOKEN"), rt.etcdClient, identity, 10*time.Second, opts.MaxBytes)
+			stateBackend, err = deviceactor.NewEtcdSnapshotBackendEndpoints(a.DaprURL, apiToken, a.Replica.SnapshotEndpoints(), a.Replica.SnapshotEtcdPrefix, os.Getenv("ETCD_AUTH_TOKEN"), rt.etcdClient, identity, period, opts.MaxBytes)
 			if err != nil {
 				return fail(err)
 			}

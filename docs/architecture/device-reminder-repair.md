@@ -70,3 +70,7 @@ within-sweep retry, cancellation joining workers without queued calls, activatio
 through the actual Dapr client, rejection of overlapping runners and runtime
 configuration wiring. Long infrastructure fault drills were not repeated for
 this host-local lifecycle change.
+
+The repair sweep delay is independent of the
+[configured maintenance cadence](device-maintenance-cadence.md). A configured
+period mismatch remains a repair error; this pool does not migrate reminders.
