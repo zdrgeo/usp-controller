@@ -755,3 +755,12 @@ The actor contract, callback and authenticated API now expose bounded
 receive time and notification kind are available in FIFO order without payloads.
 View-bound cursors reject append/export changes while reads perform no maintenance,
 export or dispatch. Legacy remains the default and schema 9 is unchanged.
+
+### Capacity headroom and fleet status compatibility
+
+Actor status now exposes [remaining hard and ordinary capacity](device-actor-capacity.md#remaining-capacity-diagnostics)
+without reserving space or changing admission. Retained terminal work still counts.
+Fleet projections preserve and cross-check the optional diagnostic while accepting
+the published bootstrap/verification reason codes. Older cached rows remain readable;
+invalid refreshes retain prior evidence as stale. Legacy remains the default and
+snapshot schema 9 is unchanged.

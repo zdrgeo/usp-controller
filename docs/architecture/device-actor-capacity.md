@@ -106,3 +106,50 @@ before publication, and response byte headroom while new begins are blocked.
 Existing configuration/canary checks also exercise reserve bounds and actual
 runtime wiring. Storage/transport protocols are unchanged; the long infrastructure
 fault/compaction suite was not rerun.
+
+## Remaining capacity diagnostics
+
+Actor status now includes an optional `capacity` object computed from the same
+loaded snapshot and encoded state size as its existing counters. New actor status
+responses always populate it; older cached fleet snapshots may omit it. Missing
+means unavailable, not zero remaining capacity.
+
+| Field | Remaining budget |
+| --- | --- |
+| `ordinary_state_bytes_limit` | Hard snapshot limit minus configured byte reserve. |
+| `ordinary_state_bytes_remaining` | Ordinary byte limit minus current encoded state size. |
+| `hard_state_bytes_remaining` | Hard byte limit minus current encoded state size. |
+| `command_slots_remaining` | Command limit minus all retained command states. |
+| `mutation_receipt_slots_remaining` | Receipt limit minus retained mutation receipts. |
+| `event_slots_remaining` | Hard pending-event limit minus pending events. |
+| `ordinary_event_slots_remaining` | Pending-event limit minus notification reserve and pending events. |
+| `notification_receipt_slots_remaining` | Hard notification-receipt limit minus retained notification receipts. |
+| `ordinary_notification_receipt_slots_remaining` | Notification-receipt limit minus notification reserve and retained receipts. |
+
+Remaining values clamp at zero. Correlated completion evidence can consume reserve
+and leave ordinary headroom at zero while hard headroom remains positive. Byte
+size is the current writer's locally encoded snapshot size, not physical backend
+usage. Record budgets apply to independent maps; they are not one shared slot pool.
+The ordinary notification slots apply to ordinary notification admission, not a
+new reservation for every command.
+
+These are observations of existing state, not admission promises. New payloads,
+receipts, revisions and evidence still add bytes, and another actor turn can change
+the counters. All actual save/admission checks remain authoritative. Cancelled,
+failed, succeeded and acknowledged-unknown commands remain retained and consume
+slots. No pruning, extra reservation, backend call or write is introduced by status.
+
+Fleet projections preserve the optional object and validate it against the root
+status counters before replacing a cached snapshot. Legacy snapshots without it
+remain readable. The fleet validator also now accepts the published bounded
+bootstrap/verification reason codes (`observation_eligible`, `observation_recorded`,
+`observation_available`, `verification_eligible`, `verification_recorded`) while
+still rejecting unknown reasons. Invalid refreshes keep the last valid snapshot
+and mark it stale under the existing projection rules.
+
+Validation on 2026-11-15: the full race-enabled Go suite and `go vet` passed. Focused
+checks cover independent hard/ordinary budgets, reserve consumption, retained
+terminal commands, zero clamping, read-only status, projection restart compatibility
+and rejection of inconsistent headroom. Snapshot schema 9, reserve enforcement,
+legacy defaults and storage fencing are unchanged; long infrastructure fault drills
+were not repeated for this diagnostic/compatibility change.

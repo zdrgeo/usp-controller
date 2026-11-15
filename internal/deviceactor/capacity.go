@@ -34,3 +34,38 @@ func (a *Actor) saveNotification(ctx context.Context, s *snapshot, priority bool
 	}
 	return a.saveOrdinary(ctx, s)
 }
+
+// CapacityStatus is remaining space in an already-loaded snapshot, not an
+// admission promise: new payloads, receipts and evidence still consume capacity.
+type CapacityStatus struct {
+	OrdinaryStateBytesLimit                   int `json:"ordinary_state_bytes_limit"`
+	OrdinaryStateBytesRemaining               int `json:"ordinary_state_bytes_remaining"`
+	HardStateBytesRemaining                   int `json:"hard_state_bytes_remaining"`
+	CommandSlotsRemaining                     int `json:"command_slots_remaining"`
+	MutationReceiptSlotsRemaining             int `json:"mutation_receipt_slots_remaining"`
+	EventSlotsRemaining                       int `json:"event_slots_remaining"`
+	OrdinaryEventSlotsRemaining               int `json:"ordinary_event_slots_remaining"`
+	NotificationReceiptSlotsRemaining         int `json:"notification_receipt_slots_remaining"`
+	OrdinaryNotificationReceiptSlotsRemaining int `json:"ordinary_notification_receipt_slots_remaining"`
+}
+
+// RemainingCapacity derives headroom from validated status counters. All retained
+// command states count; ordinary notification budgets exclude completion reserve.
+func (s Status) RemainingCapacity() CapacityStatus {
+	commands := 0
+	for _, n := range s.CommandStates {
+		commands += n
+	}
+	ordinaryBytes := max(0, s.MaxStateBytes-s.ReservedCompletionBytes)
+	return CapacityStatus{
+		OrdinaryStateBytesLimit:                   ordinaryBytes,
+		OrdinaryStateBytesRemaining:               max(0, ordinaryBytes-s.StateBytes),
+		HardStateBytesRemaining:                   max(0, s.MaxStateBytes-s.StateBytes),
+		CommandSlotsRemaining:                     max(0, s.MaxCommands-commands),
+		MutationReceiptSlotsRemaining:             max(0, s.MaxReceipts-s.MutationReceipts),
+		EventSlotsRemaining:                       max(0, s.MaxCommands-s.PendingEvents),
+		OrdinaryEventSlotsRemaining:               max(0, s.MaxCommands-s.ReservedCompletionNotifications-s.PendingEvents),
+		NotificationReceiptSlotsRemaining:         max(0, s.MaxReceipts-s.NotificationReceipts),
+		OrdinaryNotificationReceiptSlotsRemaining: max(0, s.MaxReceipts-s.ReservedCompletionNotifications-s.NotificationReceipts),
+	}
+}

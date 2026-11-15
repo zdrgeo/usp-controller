@@ -172,6 +172,7 @@ func (a *Actor) scheduleReconciliation(ctx context.Context, s *snapshot) error {
 
 // Status contains no desired/reported values and performs no fleet fanout.
 type Status struct {
+	Capacity                        *CapacityStatus             `json:"capacity,omitempty"`
 	ReservedCompletionBytes         int                         `json:"reserved_completion_bytes"`
 	ReservedCompletionNotifications int                         `json:"reserved_completion_notifications"`
 	ExecutionPaused                 bool                        `json:"execution_paused"`
@@ -226,6 +227,8 @@ func (a *Actor) GetStatus(ctx context.Context) (Status, error) {
 		at := s.Outbox[0].ReceivedAt
 		out.OldestEventAt = &at
 	}
+	capacity := out.RemainingCapacity()
+	out.Capacity = &capacity
 	return out, nil
 }
 

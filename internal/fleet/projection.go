@@ -301,7 +301,7 @@ func validateStatus(s deviceactor.Status, site string) error {
 		return ErrInvalid
 	}
 	switch s.Reconciliation {
-	case "disabled", "paused", "idle", "policy_blocked", "waiting_observation", "converged", "eligible", "attempt_recorded", "blocked_unknown":
+	case "disabled", "paused", "idle", "policy_blocked", "waiting_observation", "converged", "eligible", "attempt_recorded", "blocked_unknown", "observation_eligible", "observation_recorded", "observation_available", "verification_eligible", "verification_recorded":
 	default:
 		return ErrInvalid
 	}
@@ -328,6 +328,9 @@ func validateStatus(s deviceactor.Status, site string) error {
 		default:
 			return fmt.Errorf("%w: unknown command state", ErrInvalid)
 		}
+	}
+	if s.Capacity != nil && *s.Capacity != s.RemainingCapacity() {
+		return fmt.Errorf("%w: inconsistent capacity headroom", ErrInvalid)
 	}
 	return nil
 }

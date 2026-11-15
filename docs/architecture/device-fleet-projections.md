@@ -157,3 +157,14 @@ ambiguous persistence, corrupt files, inventory removal, status/site validation,
 refresh/event races, periodic fallback, worker limits, pagination, authentication
 and no query fan-out. Live Dapr/broker delivery qualification, site-scale load,
 WAN isolation and power-loss/restore drills remain deployment gates.
+
+## Current capacity and reconciliation compatibility
+
+Projected status now preserves optional [capacity headroom](device-actor-capacity.md#remaining-capacity-diagnostics).
+Older cached rows omit this object rather than reporting false zero headroom. New
+objects must agree with their root counters before a refresh replaces the cache.
+Bootstrap and verification eligibility/recorded reason codes are now accepted;
+previously these valid actor responses could leave the projection in refresh failure.
+Unknown reasons and inconsistent headroom still fail validation and preserve the
+last valid snapshot as stale. No projection schema migration or actor mutation is
+required.
