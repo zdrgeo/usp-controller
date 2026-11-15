@@ -737,3 +737,12 @@ recurring Tick registration for the cohort, preserving the 10-second default.
 Matching registrations are not reset, and conflicting registrations require
 explicit reviewed replacement rather than silent mutation. Command/event budgets,
 absolute deadlines and snapshot schema 9 are unchanged. Legacy remains the default.
+
+
+### Consistent actor API read semantics
+
+Actor evidence/control reads now distinguish read failures from uncertain mutation
+admission. Pagination restart guidance is confined to command-list cursor conflicts.
+Shared access handling prevents storing handled actor API responses, including
+access and backend failures, as reusable HTTP state. Mutating calls retain their
+existing uncertainty guidance; legacy, storage protocols and schema 9 are unchanged.

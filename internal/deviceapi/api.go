@@ -48,6 +48,8 @@ func Handler(next http.Handler, invoker Invoker, devices map[string]device.Devic
 	mux.Handle("/", next)
 	auth := func(fn func(http.ResponseWriter, *http.Request, device.DeviceIdentity)) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
+			// Actor evidence and access failures must not be stored as reusable state.
+			w.Header().Set("Cache-Control", "no-store")
 			if len(token) < 32 || subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+token)) != 1 {
 				http.Error(w, "unauthorized", 401)
 				return
@@ -114,7 +116,7 @@ func Handler(next http.Handler, invoker Invoker, devices map[string]device.Devic
 		}
 		b, err := invoker.Invoke(r.Context(), id, "ListCommands", query)
 		if err != nil {
-			readFailure(w, err)
+			commandListFailure(w, err)
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
@@ -127,7 +129,7 @@ func Handler(next http.Handler, invoker Invoker, devices map[string]device.Devic
 		}
 		b, err := invoker.Invoke(r.Context(), id, "GetCommand", deviceactor.CommandLookup{RequestID: device.RequestID(r.PathValue("command"))})
 		if err != nil {
-			failure(w, err)
+			readFailure(w, err)
 			return
 		}
 		output(w, 200, b)
@@ -173,7 +175,7 @@ func Handler(next http.Handler, invoker Invoker, devices map[string]device.Devic
 	mux.HandleFunc("GET /v2/devices/{device}/execution", auth(func(w http.ResponseWriter, r *http.Request, id device.DeviceIdentity) {
 		b, err := invoker.Invoke(r.Context(), id, "GetExecution", nil)
 		if err != nil {
-			failure(w, err)
+			readFailure(w, err)
 			return
 		}
 		output(w, 200, b)
@@ -208,7 +210,7 @@ func Handler(next http.Handler, invoker Invoker, devices map[string]device.Devic
 			}
 			b, err := invoker.Invoke(r.Context(), id, "GetTwinDiff", nil)
 			if err != nil {
-				failure(w, err)
+				readFailure(w, err)
 				return
 			}
 			w.Header().Set("Cache-Control", "no-store")
@@ -235,7 +237,7 @@ func Handler(next http.Handler, invoker Invoker, devices map[string]device.Devic
 		mux.HandleFunc("GET /v2/devices/{device}/twin", auth(func(w http.ResponseWriter, r *http.Request, id device.DeviceIdentity) {
 			b, err := invoker.Invoke(r.Context(), id, "GetTwin", nil)
 			if err != nil {
-				failure(w, err)
+				readFailure(w, err)
 				return
 			}
 			output(w, 200, b)
@@ -259,7 +261,7 @@ func Handler(next http.Handler, invoker Invoker, devices map[string]device.Devic
 		mux.HandleFunc("GET /v2/devices/{device}/status", auth(func(w http.ResponseWriter, r *http.Request, id device.DeviceIdentity) {
 			b, err := invoker.Invoke(r.Context(), id, "GetStatus", nil)
 			if err != nil {
-				failure(w, err)
+				readFailure(w, err)
 				return
 			}
 			output(w, 200, b)
@@ -321,11 +323,14 @@ func failure(w http.ResponseWriter, err error) {
 }
 func readFailure(w http.ResponseWriter, err error) {
 	status := failureStatus(err)
-	message := http.StatusText(status)
-	if status == 409 {
-		message = "command view changed; restart without a cursor"
+	http.Error(w, http.StatusText(status), status)
+}
+func commandListFailure(w http.ResponseWriter, err error) {
+	if errors.Is(err, deviceactor.ErrConflict) {
+		http.Error(w, "command view changed; restart without a cursor", http.StatusConflict)
+		return
 	}
-	http.Error(w, message, status)
+	readFailure(w, err)
 }
 
 // Timeout limits API work independently of the command's durable deadline.

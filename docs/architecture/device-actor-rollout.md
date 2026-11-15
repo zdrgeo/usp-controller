@@ -372,3 +372,24 @@ and preserves deterministic reminder staggering. Existing mismatched registratio
 are not overwritten; coordinate drain and explicit administrative replacement
 before changing a live cohort. Persisted deadlines, schema 9 and legacy defaults
 are unchanged.
+
+
+## Actor API read errors and caching
+
+Actor command, execution, twin/diff and status reads now return ordinary read
+errors without suggesting that admission committed or asking callers to replay a
+mutation ID. Only a conflicting command-list cursor receives the instruction to
+restart pagination; unrelated read conflicts remain ordinary conflicts. Status
+codes and backend retry behavior are unchanged. Mutating calls retain the existing
+uncertain-admission guidance.
+
+The shared actor API access wrapper sets `Cache-Control: no-store` before access,
+input validation or invocation. This covers successful evidence reads and handled
+access, inventory, validation and backend errors. It also covers mutation receipts.
+Twin freshness, execution state and late command evidence can change independently
+of a caller's cached view. Legacy fallback routes are unchanged.
+
+Validation on 2026-11-15: the race-enabled full Go suite and `go vet` passed. A
+focused regression check covers all six read routes, error guidance, cursor-only
+conflicts, no retries, access/inventory failures and preserved mutation uncertainty.
+Storage, execution permissions and snapshot schema 9 are unchanged.

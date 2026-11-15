@@ -107,3 +107,10 @@ New definitive mutations also expose optional `mutation_outcome_at` in summaries
 and individual reads. This controller processing timestamp participates in the
 view fingerprint; missing values on historical evidence are not synthesized. See
 [mutation outcomes](device-mutation-outcomes.md) for schema 9 and rollout limits.
+
+
+Actor API read failures now consistently omit uncertain-admission/replay guidance.
+The restart-without-cursor instruction applies only to command-list view conflicts,
+not single-command, execution, twin/diff or status reads. Shared access handling
+sets `Cache-Control: no-store` before handled successes and failures. This does
+not change mutation idempotency, dispatch or snapshot schema 9.
