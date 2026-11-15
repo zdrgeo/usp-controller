@@ -65,6 +65,7 @@ cross-site migration protocol. Site is not added to persistent actor identity.
 |---|---|
 | `GET /v2/devices/{device}/twin` | Authoritative actor twin, filtered to managed paths |
 | `PATCH /v2/devices/{device}/desired` | Atomic compare-and-set desired mutation with durable receipt |
+| `GET /v2/devices/{device}/events` | Pending outbox metadata in FIFO order; no export or mutation |
 | `GET /v2/devices/{device}/twin/diff` | Value-free per-path observation differences; no dispatch or maintenance |
 | `POST /v2/devices/{device}/twin/refresh` | One explicit queued Get of reviewed managed paths; requires Get projection |
 | `GET /v2/devices/{device}/status` | Value-free actor diagnostics and reconciliation eligibility |
@@ -378,7 +379,7 @@ are unchanged.
 
 Actor command, execution, twin/diff and status reads now return ordinary read
 errors without suggesting that admission committed or asking callers to replay a
-mutation ID. Only a conflicting command-list cursor receives the instruction to
+mutation ID. Only conflicting command/event-list cursors receive the instruction to
 restart pagination; unrelated read conflicts remain ordinary conflicts. Status
 codes and backend retry behavior are unchanged. Mutating calls retain the existing
 uncertain-admission guidance.
@@ -390,6 +391,14 @@ Twin freshness, execution state and late command evidence can change independent
 of a caller's cached view. Legacy fallback routes are unchanged.
 
 Validation on 2026-11-15: the race-enabled full Go suite and `go vet` passed. A
-focused regression check covers all six read routes, error guidance, cursor-only
+focused regression check covers all actor read routes, error guidance, cursor-only
 conflicts, no retries, access/inventory failures and preserved mutation uncertainty.
 Storage, execution permissions and snapshot schema 9 are unchanged.
+
+
+## Pending-event inspection
+
+The [event listing](device-event-inspection.md) now exposes stable outbox identity,
+receive time and notification kind without payloads. Bounded cursors detect changes
+to pending metadata and require a fresh page after append/export. Reads never
+export or mutate state. Legacy remains the default and schema 9 is unchanged.

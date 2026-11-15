@@ -746,3 +746,12 @@ admission. Pagination restart guidance is confined to command-list cursor confli
 Shared access handling prevents storing handled actor API responses, including
 access and backend failures, as reusable HTTP state. Mutating calls retain their
 existing uncertainty guidance; legacy, storage protocols and schema 9 are unchanged.
+
+
+### Pending-event metadata inspection
+
+The actor contract, callback and authenticated API now expose bounded
+[pending-event inspection](device-event-inspection.md). Stable event identity,
+receive time and notification kind are available in FIFO order without payloads.
+View-bound cursors reject append/export changes while reads perform no maintenance,
+export or dispatch. Legacy remains the default and schema 9 is unchanged.

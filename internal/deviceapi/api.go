@@ -90,6 +90,41 @@ func Handler(next http.Handler, invoker Invoker, devices map[string]device.Devic
 		w.Header().Set("Location", "/v2/devices/"+url.PathEscape(id.AgentID)+"/commands/"+url.PathEscape(string(input.RequestID)))
 		output(w, 202, b)
 	}))
+	mux.HandleFunc("GET /v2/devices/{device}/events", auth(func(w http.ResponseWriter, r *http.Request, id device.DeviceIdentity) {
+		values, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil {
+			http.Error(w, "invalid event query", 400)
+			return
+		}
+		for name, value := range values {
+			if len(value) != 1 || (name != "limit" && name != "cursor") {
+				http.Error(w, "unknown or repeated event query field", 400)
+				return
+			}
+		}
+		query := device.EventQuery{Cursor: values.Get("cursor")}
+		if raw, ok := values["limit"]; ok {
+			query.Limit, err = strconv.Atoi(raw[0])
+			if err != nil || query.Limit < 1 || query.Limit > deviceactor.MaxEventPageSize {
+				http.Error(w, "limit must be 1–100", 400)
+				return
+			}
+		}
+		if len(query.Cursor) > deviceactor.MaxEventCursorBytes {
+			http.Error(w, "invalid event cursor", 400)
+			return
+		}
+		b, err := invoker.Invoke(r.Context(), id, "ListEvents", query)
+		if err != nil {
+			if errors.Is(err, deviceactor.ErrConflict) {
+				http.Error(w, "event view changed; restart without a cursor", 409)
+			} else {
+				readFailure(w, err)
+			}
+			return
+		}
+		output(w, 200, b)
+	}))
 	mux.HandleFunc("GET /v2/devices/{device}/commands", auth(func(w http.ResponseWriter, r *http.Request, id device.DeviceIdentity) {
 		values, err := url.ParseQuery(r.URL.RawQuery)
 		if err != nil {

@@ -36,7 +36,7 @@ func TestActorReadsNeverDescribeWritesOrCacheMutableEvidence(t *testing.T) {
 		h.ServeHTTP(w, r)
 		return w
 	}
-	routes := []struct{ suffix, method string }{{"commands", "ListCommands"}, {"commands/request", "GetCommand"}, {"execution", "GetExecution"}, {"twin", "GetTwin"}, {"twin/diff", "GetTwinDiff"}, {"status", "GetStatus"}}
+	routes := []struct{ suffix, method string }{{"events", "ListEvents"}, {"commands", "ListCommands"}, {"commands/request", "GetCommand"}, {"execution", "GetExecution"}, {"twin", "GetTwin"}, {"twin/diff", "GetTwinDiff"}, {"status", "GetStatus"}}
 	for _, route := range routes {
 		t.Run(route.method, func(t *testing.T) {
 			for _, failure := range []struct {
@@ -53,7 +53,7 @@ func TestActorReadsNeverDescribeWritesOrCacheMutableEvidence(t *testing.T) {
 					t.Fatal("read exposed mutation guidance or backend detail", w.Body.String())
 				}
 				cursorMessage := strings.Contains(w.Body.String(), "restart without a cursor")
-				if cursorMessage != (route.method == "ListCommands" && failure.status == 409) {
+				if cursorMessage != ((route.method == "ListCommands" || route.method == "ListEvents") && failure.status == 409) {
 					t.Fatal("cursor guidance leaked to unrelated read", w.Body.String())
 				}
 			}

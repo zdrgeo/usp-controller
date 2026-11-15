@@ -110,7 +110,8 @@ view fingerprint; missing values on historical evidence are not synthesized. See
 
 
 Actor API read failures now consistently omit uncertain-admission/replay guidance.
-The restart-without-cursor instruction applies only to command-list view conflicts,
-not single-command, execution, twin/diff or status reads. Shared access handling
+The restart-without-cursor instruction applies to command-list and
+[pending-event-list](device-event-inspection.md) view conflicts, not single-command,
+execution, twin/diff or status reads. Shared access handling
 sets `Cache-Control: no-store` before handled successes and failures. This does
 not change mutation idempotency, dispatch or snapshot schema 9.

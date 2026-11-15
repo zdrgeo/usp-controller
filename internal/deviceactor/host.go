@@ -144,6 +144,14 @@ func (h *Host) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			receipt, err := a.EnqueueCommand(r.Context(), request)
 			respond(w, CommandOutput{RequestID: receipt.ID, Revision: receipt.Revision, State: receipt.State}, err)
 			return
+		case "ListEvents":
+			var query device.EventQuery
+			if !h.decode(w, r, &query) {
+				return
+			}
+			page, err := a.ListEvents(r.Context(), query)
+			respond(w, page, err)
+			return
 		case "ListCommands":
 			var query device.CommandQuery
 			if !h.decode(w, r, &query) {
