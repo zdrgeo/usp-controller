@@ -375,10 +375,7 @@ func (a *Actor) SetDesired(ctx context.Context, r device.SetDesiredRequest) (dev
 	seen := map[string]bool{}
 	remove := append([]string(nil), r.Remove...)
 	sort.Strings(remove)
-	for p, v := range r.Values {
-		if a.opts.Policy != nil && !a.opts.Policy.Allows(p, v, true) {
-			return zero, ErrInvalid
-		}
+	for p := range r.Values {
 		if !validPath(p) {
 			return zero, ErrInvalid
 		}
@@ -409,6 +406,13 @@ func (a *Actor) SetDesired(ctx context.Context, r device.SetDesiredRequest) (dev
 			return zero, err
 		}
 		return device.DesiredReceipt{ID: r.ID, Revision: prior.Revision}, nil
+	}
+	// An immutable receipt recovers prior admission; current policy applies only
+	// to new intent and must not make old retries reapply or lose that receipt.
+	for p, v := range r.Values {
+		if a.opts.Policy != nil && !a.opts.Policy.Allows(p, v, true) {
+			return zero, ErrInvalid
+		}
 	}
 	if r.ExpectedRevision != s.DesiredRevision {
 		return zero, ErrConflict
@@ -445,13 +449,10 @@ type ReportRequest struct {
 func (a *Actor) Report(ctx context.Context, r ReportRequest) (uint64, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if r.ID == "" || strings.HasPrefix(string(r.ID), "reconcile-") || r.Identity != a.id || r.ReceivedAt.IsZero() || r.ReceivedAt.After(a.opts.Now()) || len(r.Values) == 0 {
+	if r.ID == "" || strings.HasPrefix(string(r.ID), "reconcile-") || r.Identity != a.id || r.ReceivedAt.IsZero() || len(r.Values) == 0 {
 		return 0, ErrInvalid
 	}
-	for p, v := range r.Values {
-		if a.opts.Policy != nil && !a.opts.Policy.Allows(p, v, false) {
-			return 0, ErrInvalid
-		}
+	for p := range r.Values {
 		if !validPath(p) {
 			return 0, ErrInvalid
 		}
@@ -474,6 +475,16 @@ func (a *Actor) Report(ctx context.Context, r ReportRequest) (uint64, error) {
 			return 0, err
 		}
 		return prior.Revision, nil
+	}
+	// Duplicates above retain their original receipt without refreshing data,
+	// even after policy withdrawal or a controller clock rollback.
+	if r.ReceivedAt.After(a.opts.Now()) {
+		return 0, ErrInvalid
+	}
+	for p, v := range r.Values {
+		if a.opts.Policy != nil && !a.opts.Policy.Allows(p, v, false) {
+			return 0, ErrInvalid
+		}
 	}
 	if s.ReportedRevision == math.MaxUint64 {
 		return 0, ErrCapacity

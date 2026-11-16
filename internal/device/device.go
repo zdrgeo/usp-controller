@@ -91,8 +91,6 @@ type DeviceTwin struct {
 	BlockingUnknown                   []RequestID
 }
 
-// Same request ID and immutable content returns the original receipt. A changed
-// payload conflicts. ExpectedRevision applies only to first admission.
 // RefreshTwinRequest requests one explicit read of the current managed policy.
 // It shares command identity, queueing and delivery semantics with raw Get.
 type RefreshTwinRequest struct {
@@ -100,6 +98,10 @@ type RefreshTwinRequest struct {
 	Deadline  time.Time `json:"deadline"`
 }
 
+// Same request ID and immutable content returns the original receipt. A changed
+// payload conflicts. ExpectedRevision applies only to first admission.
+// Current managed-path policy also applies only to first admission; receipt
+// recovery does not reapply values or authorize them under the current policy.
 type SetDesiredRequest struct {
 	ID               RequestID
 	ExpectedRevision uint64

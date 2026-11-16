@@ -764,3 +764,12 @@ Fleet projections preserve and cross-check the optional diagnostic while accepti
 the published bootstrap/verification reason codes. Older cached rows remain readable;
 invalid refreshes retain prior evidence as stale. Legacy remains the default and
 snapshot schema 9 is unchanged.
+
+### Receipt recovery under policy evolution
+
+Identical desired-state and trusted Report retries now recover retained receipts
+before current path-policy validation. Fresh mutations still require current
+policy and time/revision checks; changed retry content conflicts. Recovery does
+not reapply historical values, overwrite newer state or refresh observations,
+including after controller clock rollback. Existing access and scheduling gates
+remain. Legacy, receipt format and snapshot schema 9 are unchanged.

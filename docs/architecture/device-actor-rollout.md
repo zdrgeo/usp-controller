@@ -402,3 +402,31 @@ The [event listing](device-event-inspection.md) now exposes stable outbox identi
 receive time and notification kind without payloads. Bounded cursors detect changes
 to pending metadata and require a fresh page after append/export. Reads never
 export or mutate state. Legacy remains the default and schema 9 is unchanged.
+
+## Receipt recovery across managed-policy changes
+
+Desired-state updates and trusted Report imports now check an existing immutable
+receipt before applying current managed-path admission policy. An identical retry
+can recover its original revision after a path is removed, made read-only or given
+a different type. It does not reapply old values, undo a later revision, refresh
+observations, allocate another receipt or queue a command. Changed content under
+an existing ID still conflicts, even if current policy would also reject it.
+
+New IDs still require current policy validation. Desired updates still require
+the current desired revision on first admission. New Report timestamps still
+cannot be in the controller's future; an identical already-admitted Report can
+recover its receipt after clock rollback without promoting its historical values.
+Existing future-observation and mutation barriers continue to govern freshness.
+
+Current route/access/identity checks and structural validation remain in force.
+Retries also retain the existing reminder-repair requirement: storage or scheduler
+unavailability can still prevent a successful response. This change does not relax
+RefreshTwin's execution/projection gates or its underlying scoped-Get fingerprint.
+An old receipt is evidence of historical admission, not current path authorization
+or the current desired/reported revision.
+
+Validation on 2026-11-16: the race-enabled full Go suite and `go vet` passed.
+Focused checks cover ambiguous admission, later revisions, withdrawn/read-only/
+retyped paths, full receipt budgets, immutable-body conflicts, report-clock rollback
+and rejection of new disallowed/future input without state changes. Legacy remains
+the default; schema 9, receipt fingerprints and dispatch semantics are unchanged.
