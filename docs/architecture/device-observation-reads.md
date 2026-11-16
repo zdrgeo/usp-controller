@@ -56,3 +56,24 @@ no fabricated convergence, no replay after uncertainty or acknowledgement,
 policy/revision/pause changes and rejection of downgraded provenance. The full
 race-enabled Go suite and `go vet` validate integration. Long infrastructure fault
 tests are not repeated for this actor-local change.
+
+## Canonical restored read scope
+
+Generated bootstrap and verification Gets now validate their bounded shape when
+loading retained state. They require 1–1024 sorted, unique concrete parameter
+paths and `max_depth=1`. Object/search selectors, duplicate or unordered paths and
+unbounded depth cannot masquerade as generated reconciliation reads after restore.
+The queued-bootstrap pre-attempt check uses the same shape rule.
+
+Validation is structural and does not reinterpret historical commands under the
+current policy. Old reviewed paths remain evidence; current-policy and desired
+revision checks still decide whether queued generated work is eligible. An invalid
+snapshot fails closed before a new attempt, save or transport handoff. This is
+trusted-snapshot consistency validation, not protection against arbitrary history
+rewrites or proof of original admission.
+
+All supported generated-read writers already used this canonical shape. Actor
+schema 12 and receipt encoding remain unchanged; explicit raw Get scope rules are
+unchanged. Focused restore checks cover both generated read kinds, broader/malformed
+scopes, valid recovery and unchanged raw object-Get behavior. Legacy remains the
+default.

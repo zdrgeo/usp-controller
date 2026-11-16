@@ -221,13 +221,13 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 		if c.VerificationRevision != 0 {
 			req := new(usp.Request)
 			write, ok := s.Commands[device.RequestID(fmt.Sprintf("reconcile-%d", c.VerificationRevision))]
-			if sourceSchema < 8 || c.DesiredRevision != 0 || c.ObservationRevision != 0 || c.VerificationRevision > s.DesiredRevision || string(id) != fmt.Sprintf("reconcile-verify-%d", c.VerificationRevision) || proto.Unmarshal(c.Payload, req) != nil || req.GetGet() == nil || !ok || write.DesiredRevision != c.VerificationRevision || write.Receipt.State != device.CommandSucceeded || write.AttemptSequence == 0 || c.AttemptSequence != 0 && c.AttemptSequence <= write.AttemptSequence {
+			if sourceSchema < 8 || c.DesiredRevision != 0 || c.ObservationRevision != 0 || c.VerificationRevision > s.DesiredRevision || string(id) != fmt.Sprintf("reconcile-verify-%d", c.VerificationRevision) || proto.Unmarshal(c.Payload, req) != nil || !validGeneratedGet(req) || !ok || write.DesiredRevision != c.VerificationRevision || write.Receipt.State != device.CommandSucceeded || write.AttemptSequence == 0 || c.AttemptSequence != 0 && c.AttemptSequence <= write.AttemptSequence {
 				return nil, fmt.Errorf("invalid verification command provenance")
 			}
 		}
 		if c.ObservationRevision != 0 {
 			req := new(usp.Request)
-			if sourceSchema < 7 || c.DesiredRevision != 0 || c.ObservationRevision > s.DesiredRevision || string(id) != fmt.Sprintf("reconcile-observe-%d", c.ObservationRevision) || proto.Unmarshal(c.Payload, req) != nil || req.GetGet() == nil {
+			if sourceSchema < 7 || c.DesiredRevision != 0 || c.ObservationRevision > s.DesiredRevision || string(id) != fmt.Sprintf("reconcile-observe-%d", c.ObservationRevision) || proto.Unmarshal(c.Payload, req) != nil || !validGeneratedGet(req) {
 				return nil, fmt.Errorf("invalid observation command provenance")
 			}
 		}

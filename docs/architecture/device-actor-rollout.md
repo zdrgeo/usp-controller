@@ -653,3 +653,13 @@ still reopen during a policy rollout. The setting is opt-in and empty preserves
 older-host compatibility. See [fleet policy matching](device-fleet-projections.md#optional-expected-twin-policy).
 Legacy remains the default; actor execution, schema 12 and cache row format are
 unchanged.
+
+### Canonical generated-read provenance
+
+Retained bootstrap and verification Gets now require their original bounded,
+canonical form: sorted unique concrete parameter paths and depth one. Malformed
+restored scope fails closed before a new attempt or publication. Validation does
+not rebind historical evidence to current policy or restrict explicit raw Gets.
+See [restored read scope](device-observation-reads.md#canonical-restored-read-scope).
+Legacy remains the default; schema 12, receipt identity and delivery protocols are
+unchanged.

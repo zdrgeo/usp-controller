@@ -2,10 +2,29 @@ package deviceactor
 
 import (
 	"sort"
+	"strings"
 
 	"example.com/usp-controller/internal/pb/usp"
 	"google.golang.org/protobuf/proto"
 )
+
+// Generated reads use one bounded, canonical shape. Validate provenance without
+// reinterpreting historical commands using the current managed-path policy.
+func validGeneratedGet(req *usp.Request) bool {
+	get := req.GetGet()
+	if get == nil || get.MaxDepth != 1 || len(get.ParamPaths) == 0 || len(get.ParamPaths) > 1024 {
+		return false
+	}
+	previous := ""
+	for _, path := range get.ParamPaths {
+		dot := strings.LastIndex(path, ".")
+		if path <= previous || dot < 0 || !concreteObject.MatchString(path[:dot+1]) || !parameterName.MatchString(path[dot+1:]) {
+			return false
+		}
+		previous = path
+	}
+	return true
+}
 
 // One bounded bootstrap read per desired revision, never a polling/retry loop.
 // Reconciliation itself still requires fresh, typed observations for all paths.
@@ -54,7 +73,7 @@ func (a *Actor) currentObservation(s *snapshot, c storedCommand) bool {
 		return false
 	}
 	req := new(usp.Request)
-	if proto.Unmarshal(c.Payload, req) != nil || req.GetGet() == nil || len(req.GetGet().ParamPaths) == 0 {
+	if proto.Unmarshal(c.Payload, req) != nil || !validGeneratedGet(req) {
 		return false
 	}
 	for path, want := range s.Desired {
