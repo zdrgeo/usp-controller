@@ -468,3 +468,18 @@ event. Older readings and earlier-started Gets cannot establish fresh post-chang
 state. Cutoffs also cover known readings across clock rollback at mutation begins
 and outcomes. Schema 10 preserves older snapshots without inventing historical
 cutoffs; older binaries reject it. Legacy remains the default.
+
+### Notification receipt recovery after clock rollback
+
+Identical retained notifications now recover their receipt before applying the
+current-clock arrival-time eligibility check. This preserves acknowledgement
+recovery after a lost commit reply, restart or event export even if the controller
+clock has moved backwards. Device/message validation, nonzero arrival time and
+reminder repair still apply. Changed payloads conflict; new future-dated notices
+remain invalid. Recovery adds no save, event or device handoff and does not refresh
+observations, topology cutoffs, completion evidence or last contact.
+
+A focused check covers value-change and topology receipts after ambiguous saves,
+with both pending and exported events, plus immutable payloads, reminder failures
+and new-message time validation. Legacy remains the default; schema 10 and storage
+protocols are unchanged.

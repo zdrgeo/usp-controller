@@ -89,7 +89,7 @@ func (a *Actor) HandleNotify(ctx context.Context, r device.DeviceNotification) (
 	if n == nil || n.Notification == nil {
 		return zero, ErrInvalid
 	}
-	if r.ReceivedAt.IsZero() || r.ReceivedAt.After(a.opts.Now()) {
+	if r.ReceivedAt.IsZero() {
 		return zero, ErrInvalid
 	}
 	if v := n.GetValueChange(); v != nil && !validPath(v.ParamPath) {
@@ -119,6 +119,12 @@ func (a *Actor) HandleNotify(ctx context.Context, r device.DeviceNotification) (
 			return zero, err
 		}
 		return device.NotifyReceipt{MessageID: mid, Duplicate: true}, nil
+	}
+	// A retained receipt proves admission independently of the current clock.
+	// Only new notifications apply arrival-time eligibility; retries must not
+	// reapply observations, completion evidence or topology invalidation.
+	if r.ReceivedAt.After(a.opts.Now()) {
+		return zero, ErrInvalid
 	}
 	if s.EventSequence == math.MaxUint64 {
 		return zero, ErrCapacity

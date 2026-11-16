@@ -21,6 +21,14 @@ the event or refresh observations, including after export; conflicting content
 still fails. A different message ID is a new notice under the existing receipt
 identity contract.
 
+Receipt recovery precedes the current-clock eligibility check for arrival time.
+An identical retained notice can therefore be acknowledged after controller clock
+rollback, including after an ambiguous admission reply or event export. It still
+requires valid device/message structure, a nonzero arrival time and successful
+reminder repair. A new message ID with a future arrival time is rejected; changed
+content under a retained ID conflicts. Recovery does not rewrite state or move
+the cutoff, last contact, observation freshness or outbox sequence.
+
 This initial policy invalidates the whole tracked twin conservatively, including
 parameters outside the changed object's subtree that could depend on topology.
 It neither deletes historical reported values nor relinquishes desired state.

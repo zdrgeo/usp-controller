@@ -304,3 +304,67 @@ func TestOperateRejectsAmbiguousTargets(t *testing.T) {
 		}
 	}
 }
+
+func TestNotificationReceiptRecoveryAcrossClockRollback(t *testing.T) {
+	for _, kind := range []string{"value", "topology"} {
+		for _, exported := range []bool{false, true} {
+			name := kind + "/pending"
+			if exported {
+				name = kind + "/exported"
+			}
+			t.Run(name, func(t *testing.T) {
+				a, b, f, now := executable(t)
+				n := valueNotification("accepted", *now)
+				if kind == "topology" {
+					n = topologyNotification("accepted", "object_deletion", "Device.Test.1.", *now)
+				}
+				// Exercise receipt recovery after a committed but lost admission reply.
+				b.ambiguous = true
+				if _, err := a.HandleNotify(ctx, n); err == nil {
+					t.Fatal("ambiguous commit reported success")
+				}
+				sink := &eventSink{}
+				a, err := NewWithEvents(identity, b, a.opts, f, sink)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if exported {
+					if err := a.Tick(ctx); err != nil {
+						t.Fatal(err)
+					}
+				}
+				*now = now.Add(-time.Hour)
+				before, saves, publications := string(b.state), b.saves, len(sink.events)
+				b.failSave = true // Recovery needs no new snapshot write or capacity.
+				r, err := a.HandleNotify(ctx, n)
+				if err != nil || !r.Duplicate || r.MessageID != "accepted" {
+					t.Fatal("retained receipt lost after clock rollback", r, err)
+				}
+				b.failReminder = true
+				if _, err := a.HandleNotify(ctx, n); err == nil {
+					t.Fatal("recovery ignored reminder failure")
+				}
+				b.failReminder = false
+				changed := n
+				changed.Message = proto.Clone(n.Message).(*usp.Msg)
+				changed.Message.GetBody().GetRequest().GetNotify().SubscriptionId = "changed"
+				if _, err := a.HandleNotify(ctx, changed); !errors.Is(err, ErrConflict) {
+					t.Fatal("changed retry bypassed immutable receipt", err)
+				}
+				fresh := n
+				fresh.Message = proto.Clone(n.Message).(*usp.Msg)
+				fresh.Message.Header.MsgId = "new-future-notice"
+				if _, err := a.HandleNotify(ctx, fresh); !errors.Is(err, ErrInvalid) {
+					t.Fatal("new future notification bypassed time validation", err)
+				}
+				n.ReceivedAt = time.Time{}
+				if _, err := a.HandleNotify(ctx, n); !errors.Is(err, ErrInvalid) {
+					t.Fatal("missing arrival time accepted", err)
+				}
+				if string(b.state) != before || b.saves != saves || len(f.calls) != 0 || len(sink.events) != publications {
+					t.Fatal("recovery or rejection changed state or performed handoff")
+				}
+			})
+		}
+	}
+}
