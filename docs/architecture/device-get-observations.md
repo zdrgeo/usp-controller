@@ -31,7 +31,12 @@ Only concrete object or parameter requests, concrete resolved objects and bare
 parameter names are supported. Object requests respect `max_depth`. Search and
 wildcard paths are retained as command evidence but skipped for projection.
 Each value must also match an exact reviewed managed path and its configured type.
-Contradictory values for one path suppress that path. Successful paths in a
+Contradictory values for one requested managed path suppress that path, including
+when one candidate fails type/value validation. Candidate order does not choose
+a winner. Unrequested or unmanaged results do not participate in that decision.
+Suppression preserves any prior observation with its original freshness; it does
+not turn ambiguous evidence into a new observation or erase historical values.
+Successful paths in a
 partially failed response may update reported state; the command retains its
 failed outcome and full protocol response.
 

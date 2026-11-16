@@ -564,3 +564,18 @@ unmeasured instead of looking healthy. The additive response contains no path na
 or values and requires no actor fanout. See [fleet totals](device-fleet-projections.md#fleet-observation-health-totals)
 for denominators and compatibility. Legacy remains the default; schema 11,
 projection row storage and command delivery are unchanged.
+
+### Ambiguous Get candidates under type validation
+
+Get projection now detects contradictory candidates for requested managed paths
+before type/value filtering. A valid boolean beside an invalid contradictory
+boolean no longer becomes a fresh twin observation merely because validation
+filtered the other candidate first. Both candidate orders suppress that path;
+identical valid candidates remain usable and unrequested results cannot poison
+reviewed evidence.
+
+Prior observations retain their original timestamps and values. Independent usable
+paths still project, and the command retains its protocol outcome and full response.
+Duplicate responses still perform no projection or save. Focused checks cover both
+candidate orders, scope isolation, identical values and duplicate stability. Legacy
+remains the default; schema 11, request scope and storage protocols are unchanged.

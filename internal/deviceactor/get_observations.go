@@ -98,10 +98,12 @@ func (a *Actor) projectGet(s *snapshot, c storedCommand, req *usp.Request, r dev
 					continue
 				}
 				path := object.ResolvedPath + name
-				observed := a.observedValue(path, value)
-				if !policy.Allows(path, observed, false) || !requestedGetPath(get, result.RequestedPath, object.ResolvedPath, path) {
+				if _, managed := policy.Paths[path]; !managed || !requestedGetPath(get, result.RequestedPath, object.ResolvedPath, path) {
 					continue
 				}
+				// Detect contradictions before type/value validation can discard a
+				// conflicting candidate. Only requested managed paths participate.
+				observed := a.observedValue(path, value)
 				if prior, ok := values[path]; ok && prior != observed {
 					conflicts[path] = true
 				}
@@ -115,7 +117,7 @@ func (a *Actor) projectGet(s *snapshot, c storedCommand, req *usp.Request, r dev
 	}
 	changed := false
 	for path, value := range values {
-		if conflicts[path] {
+		if conflicts[path] || !policy.Allows(path, value, false) {
 			continue
 		}
 		if old, ok := s.Reported[path]; ok && !old.ReceivedAt.Before(c.AttemptedAt) {

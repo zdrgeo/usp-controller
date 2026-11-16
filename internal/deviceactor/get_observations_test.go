@@ -9,6 +9,7 @@ import (
 
 	"example.com/usp-controller/internal/device"
 	"example.com/usp-controller/internal/pb/usp"
+	"google.golang.org/protobuf/proto"
 )
 
 func getObservationResponse(mid string, results ...*usp.GetResp_RequestedPathResult) *usp.Msg {
@@ -261,6 +262,67 @@ func TestAttemptProvenanceRejectsInconsistentSnapshots(t *testing.T) {
 			b.state, _ = json.Marshal(s)
 			if _, err := a.GetTwin(ctx); err == nil {
 				t.Fatal("inconsistent attempt provenance accepted")
+			}
+		})
+	}
+}
+
+func TestGetProjectionDoesNotHideInvalidContradictoryCandidates(t *testing.T) {
+	for _, mode := range []string{"invalid-last", "invalid-first", "out-of-scope", "identical"} {
+		t.Run(mode, func(t *testing.T) {
+			a, b, _, now := managedActor(t)
+			a.opts.Policy.ObserveGetResponses = true
+			a.opts.Policy.Paths["Device.Test.Flag"] = device.ManagedPath{Type: "boolean"}
+			if _, err := a.Report(ctx, ReportRequest{ID: "prior", Identity: identity, ReceivedAt: *now, Values: map[string]device.ParameterValue{"Device.Test.Flag": {Type: "boolean", Value: "false"}}}); err != nil {
+				t.Fatal(err)
+			}
+			prior, _ := a.GetTwin(ctx)
+			*now = now.Add(time.Second)
+			if _, err := a.EnqueueCommand(ctx, command("read", now.Add(time.Hour))); err != nil {
+				t.Fatal(err)
+			}
+			if err := a.Tick(ctx); err != nil {
+				t.Fatal(err)
+			}
+			c, _ := a.GetCommand(ctx, "read")
+			valid := getPathResult("Device.Test.", "Device.Test.", map[string]string{"Flag": "true", "Value": "independent"})
+			other := getPathResult("Device.Test.", "Device.Test.", map[string]string{"Flag": "not-a-boolean"})
+			results := []*usp.GetResp_RequestedPathResult{valid, other}
+			switch mode {
+			case "invalid-first":
+				results[0], results[1] = other, valid
+			case "out-of-scope":
+				other.RequestedPath = "Device.Other."
+			case "identical":
+				other.ResolvedPathResults[0].ResultParams["Flag"] = "true"
+			}
+			*now = now.Add(time.Second)
+			msg := getObservationResponse(c.MessageID, results...)
+			incoming := device.DeviceResponse{Identity: identity, Message: msg, ReceivedAt: *now}
+			if err := a.HandleResponse(ctx, incoming); err != nil {
+				t.Fatal(err)
+			}
+			twin, err := a.GetTwin(ctx)
+			if err != nil || twin.ReportedRevision != 2 || len(twin.Reported) != 2 || twin.Reported["Device.Test.Value"].Value.Value != "independent" {
+				t.Fatal("ambiguous path suppressed independent evidence", twin, err)
+			}
+			flag := twin.Reported["Device.Test.Flag"]
+			if mode == "invalid-first" || mode == "invalid-last" {
+				if flag != prior.Reported["Device.Test.Flag"] {
+					t.Fatal("contradictory response refreshed or replaced prior evidence", flag)
+				}
+			} else if flag.Value.Value != "true" || !flag.ReceivedAt.Equal(*now) {
+				t.Fatal("unambiguous scoped evidence was not projected", flag)
+			}
+			settled, err := a.GetCommand(ctx, "read")
+			if err != nil || settled.State != device.CommandSucceeded || !proto.Equal(settled.Result, msg) {
+				t.Fatal("response outcome/evidence lost", settled, err)
+			}
+			before, saves := string(b.state), b.saves
+			*now = now.Add(time.Second)
+			incoming.ReceivedAt = *now
+			if err := a.HandleResponse(ctx, incoming); err != nil || b.saves != saves || string(b.state) != before {
+				t.Fatal("duplicate response reapplied projection", err)
 			}
 		})
 	}
