@@ -104,3 +104,61 @@ func TestTwinDiffClockRollbackAndMutationAgreeWithExecutionGuards(t *testing.T) 
 		t.Fatal("mutation boundary not explained", diff, err)
 	}
 }
+
+func TestTwinDiffObservationOnlyCoverageAndLifecycleInvalidation(t *testing.T) {
+	a, b, now := fixture(t)
+	if _, err := a.Report(ctx, ReportRequest{ID: "recent", Identity: identity, ReceivedAt: *now, Values: map[string]device.ParameterValue{
+		"Device.Fresh.Value":     {Type: "string", Value: "SECRET_FRESH"},
+		"Device.Retyped.Value":   {Type: "string", Value: "SECRET_RETYPE"},
+		"Device.Withdrawn.Value": {Type: "string", Value: "SECRET_WITHDRAWN"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Report(ctx, ReportRequest{ID: "old", Identity: identity, ReceivedAt: now.Add(-10 * time.Minute), Values: map[string]device.ParameterValue{"Device.Stale.Value": {Type: "string", Value: "SECRET_OLD"}}}); err != nil {
+		t.Fatal(err)
+	}
+	opts := a.opts
+	opts.Policy = &device.TwinPolicy{SiteID: "site", CommandTimeoutSeconds: 30, Paths: map[string]device.ManagedPath{
+		"Device.Fresh.Value": {Type: "string"}, "Device.Missing.Value": {Type: "string"},
+		"Device.Retyped.Value": {Type: "boolean"}, "Device.Stale.Value": {Type: "string"},
+	}}
+	f := &fakeSender{ready: true}
+	a, err := NewExecuting(identity, b, opts, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(want []string) device.TwinDiff {
+		t.Helper()
+		b.failSave, b.failReminder = true, true
+		before, saves := string(b.state), b.saves
+		diff, err := a.GetTwinDiff(ctx)
+		if err != nil || diff.Convergence != "converged" || len(diff.Paths) != 0 || diff.HiddenReportedPaths != 1 || len(diff.ObservationPaths) != 4 {
+			t.Fatal("observation coverage changed desired convergence or scope", diff, err)
+		}
+		paths, states := []string{}, []string{}
+		for _, row := range diff.ObservationPaths {
+			paths, states = append(paths, row.Path), append(states, row.State)
+			if row.State == "missing" && (row.HasObservation || row.ReceivedAt != nil || row.FreshUntil != nil) {
+				t.Fatal("missing observation acquired metadata", row)
+			}
+			if row.State == "topology_invalidated" && (row.FreshUntil == nil || !row.FreshUntil.IsZero()) {
+				t.Fatal("invalidated observation exposes effective freshness", row)
+			}
+		}
+		if !reflect.DeepEqual(states, want) || !reflect.DeepEqual(paths, []string{"Device.Fresh.Value", "Device.Missing.Value", "Device.Retyped.Value", "Device.Stale.Value"}) {
+			t.Fatal(diff)
+		}
+		raw, _ := json.Marshal(diff)
+		if strings.Contains(string(raw), "SECRET_") || strings.Contains(string(raw), "Device.Withdrawn.Value") || string(b.state) != before || b.saves != saves || len(f.calls) != 0 {
+			t.Fatal("coverage leaked values/withdrawn paths or changed state", string(raw))
+		}
+		b.failSave, b.failReminder = false, false
+		return diff
+	}
+	check([]string{"fresh", "missing", "invalid", "stale"})
+	*now = now.Add(time.Second)
+	if _, err := a.HandleNotify(ctx, topologyNotification("onboard", "on_board_request", "", *now)); err != nil {
+		t.Fatal(err)
+	}
+	check([]string{"topology_invalidated", "missing", "invalid", "topology_invalidated"})
+}

@@ -530,3 +530,16 @@ projection remains limited to requested and currently managed parameters. See
 [explicit refresh](device-twin-refresh.md) for policy-evolution and host-upgrade
 constraints. Legacy remains the default; schema 11 and backend protocols are
 unchanged.
+
+### Observation-only twin diagnostics
+
+The value-free twin diff now includes `observation_paths` for managed parameters
+without desired intent, including read-only and missing paths. It shares freshness,
+type, mutation and lifecycle eligibility checks with desired rows; usable evidence
+is reported as `fresh`. Withdrawn reported path names remain hidden behind an
+aggregate count. Desired convergence and reconciliation planning are unchanged.
+
+The read still performs one bounded snapshot load and one clock reading with no
+writes or maintenance. Existing API access controls and default-route absence
+apply. See [twin diff](device-twin-diff.md) for response compatibility and limits.
+Legacy remains the default; snapshot schema 11 and backend protocols are unchanged.

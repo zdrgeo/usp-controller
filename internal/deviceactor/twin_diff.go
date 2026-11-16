@@ -12,6 +12,16 @@ func (a *Actor) desiredPathState(s *snapshot, path string, want device.Parameter
 	if a.opts.Policy != nil && !a.opts.Policy.Allows(path, want, true) {
 		return "policy_blocked"
 	}
+	if state := a.observationPathState(s, path, now); state != "fresh" {
+		return state
+	}
+	if s.Reported[path].Value != want {
+		return "different"
+	}
+	return "matching"
+}
+
+func (a *Actor) observationPathState(s *snapshot, path string, now time.Time) string {
 	got, ok := s.Reported[path]
 	if !ok {
 		return "missing"
@@ -31,10 +41,20 @@ func (a *Actor) desiredPathState(s *snapshot, path string, want device.Parameter
 	if !now.Before(got.FreshUntil) {
 		return "stale"
 	}
-	if got.Value != want {
-		return "different"
+	return "fresh"
+}
+
+func observationDiff(s *snapshot, path, state string) device.TwinPathDiff {
+	row := device.TwinPathDiff{Path: path, State: state}
+	if got, ok := s.Reported[path]; ok {
+		row.HasObservation = true
+		at, until := got.ReceivedAt, got.FreshUntil
+		if state == "future" || state == "mutation_invalidated" || state == "topology_invalidated" {
+			until = time.Time{}
+		}
+		row.ReceivedAt, row.FreshUntil = &at, &until
 	}
-	return "matching"
+	return row
 }
 
 func (a *Actor) convergenceAt(s *snapshot, now time.Time) string {
@@ -61,7 +81,7 @@ func (a *Actor) GetTwinDiff(ctx context.Context) (device.TwinDiff, error) {
 		return device.TwinDiff{}, err
 	}
 	now := a.opts.Now().UTC()
-	out := device.TwinDiff{AsOf: now, DesiredRevision: s.DesiredRevision, ReportedRevision: s.ReportedRevision, Convergence: a.convergenceAt(s, now), Paths: []device.TwinPathDiff{}}
+	out := device.TwinDiff{AsOf: now, DesiredRevision: s.DesiredRevision, ReportedRevision: s.ReportedRevision, Convergence: a.convergenceAt(s, now), Paths: []device.TwinPathDiff{}, ObservationPaths: []device.TwinPathDiff{}}
 	if !s.mutationBarrier.IsZero() {
 		at := s.mutationBarrier
 		out.MutationBarrierAt = &at
@@ -77,18 +97,32 @@ func (a *Actor) GetTwinDiff(ctx context.Context) (device.TwinDiff, error) {
 				continue
 			}
 		}
-		row := device.TwinPathDiff{Path: path, State: a.desiredPathState(s, path, want, now)}
-		if got, ok := s.Reported[path]; ok {
-			row.HasObservation = true
-			at, until := got.ReceivedAt, got.FreshUntil
-			if row.State == "future" || row.State == "mutation_invalidated" || row.State == "topology_invalidated" {
-				until = time.Time{}
-			}
-			row.ReceivedAt = &at
-			row.FreshUntil = &until
+		out.Paths = append(out.Paths, observationDiff(s, path, a.desiredPathState(s, path, want, now)))
+	}
+	// Policy paths without desired intent include read-only parameters and
+	// missing observations. Without policy, expose only retained reported paths.
+	candidates := make(map[string]bool, len(s.Reported))
+	if a.opts.Policy != nil {
+		for path := range a.opts.Policy.Paths {
+			candidates[path] = true
 		}
-		out.Paths = append(out.Paths, row)
+		for path := range s.Reported {
+			if _, ok := a.opts.Policy.Paths[path]; !ok {
+				out.HiddenReportedPaths++
+			}
+		}
+	} else {
+		for path := range s.Reported {
+			candidates[path] = true
+		}
+	}
+	for path := range candidates {
+		if _, desired := s.Desired[path]; desired {
+			continue
+		}
+		out.ObservationPaths = append(out.ObservationPaths, observationDiff(s, path, a.observationPathState(s, path, now)))
 	}
 	sort.Slice(out.Paths, func(i, j int) bool { return out.Paths[i].Path < out.Paths[j].Path })
+	sort.Slice(out.ObservationPaths, func(i, j int) bool { return out.ObservationPaths[i].Path < out.ObservationPaths[j].Path })
 	return out, nil
 }

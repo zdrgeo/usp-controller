@@ -19,11 +19,25 @@ shadow actors, without enabling command execution.
 
 The result includes one `as_of` controller timestamp, desired/reported revisions,
 optional `mutation_barrier_at`/`topology_barrier_at`, observation-based `convergence`, a count of
-`hidden_desired_paths`, and `paths` ordered lexically. Rows describe desired paths
-only; reported-only parameters are omitted. Removed policy paths are hidden by
+`hidden_desired_paths`, and `paths` ordered lexically. Those rows describe desired
+paths only. Removed policy paths are hidden by
 name while their count remains visible. They can still make overall convergence
 unknown. Visible policy paths whose write permission/type no longer permits the
 desired value report `policy_blocked`.
+
+`observation_paths` separately lists current managed policy paths with no desired
+value, including read-only parameters and paths with no observation yet. Rows use
+the same value-free metadata and lexical ordering. Eligible evidence is `fresh`;
+otherwise they use `missing`, `invalid`, `future`, `mutation_invalidated`,
+`topology_invalidated` or `stale`, with the same precedence as desired rows.
+Write permission does not gate a read-only observation. A path with desired intent
+appears only in `paths`, even when its write policy is blocked. Without a managed
+policy, observation-only rows cover retained reported paths rather than guessing
+an observation scope.
+
+`hidden_reported_paths` counts retained observations whose paths are absent from
+current policy without exposing their names or values. It is independent of
+`hidden_desired_paths`; one withdrawn path can contribute to both counts.
 
 Each row contains `path`, `state`, `has_observation`, and optional `received_at`
 and `fresh_until`. Values, types, command bodies/IDs, evidence payloads and
@@ -36,7 +50,7 @@ free-form reasons are excluded. State precedence is:
 | `invalid` | The observation is unusable under the current managed type/value policy. |
 | `future` | Its controller receive time is later than `as_of`. |
 | `mutation_invalidated` | It was received at or before a known mutation barrier. |
-| `topology_invalidated` | It was received at or before the latest concrete object-change cutoff. |
+| `topology_invalidated` | It was received at or before the latest object-change/onboarding cutoff. |
 | `stale` | Its ordinary freshness window has ended. |
 | `different` | A usable fresh observation differs from the desired value. |
 | `matching` | A usable fresh observation matches the desired value. |
@@ -44,7 +58,8 @@ free-form reasons are excluded. State precedence is:
 Future/mutation/topology-invalidated rows expose a zero `fresh_until`; other rows retain
 the observation's recorded expiry for context. Use the state, not that timestamp
 alone, to determine whether a row is usable. Empty desired state returns
-`paths:[]` and converged, preserving existing semantics.
+`paths:[]` and converged, preserving existing semantics. Observation-only rows do
+not affect desired convergence, authorize writes or schedule refreshes.
 
 Convergence now shares this classifier: all matching paths are converged, usable
 differences are pending, and any unusable or policy-blocked desired path makes it
@@ -56,7 +71,9 @@ capacity and once-per-revision limits still govern execution separately.
 
 The read takes one actor snapshot and one clock reading for all rows. It does not
 schedule refresh/reconciliation, repair reminders, expire queued commands, save
-state or contact a device. The existing bounded desired map limits response size;
+state or contact a device. Bounded desired/reported maps and the managed policy
+limit response size (at most 1024 managed-policy candidates in addition to the
+bounded desired view);
 there is no fleet fanout or pagination session. Backend errors propagate normally.
 
 Controller clock rollback also now makes future-dated observations unusable in
@@ -85,3 +102,11 @@ cutoffs. Current writers use schema 11, which also invalidates readings after
 OnBoardRequest using the same `topology_invalidated` state and
 `topology_barrier_at` field. See [topology observations](device-topology-observations.md) for atomicity,
 clock rollback and rollout limits; older binaries reject the new snapshot schema.
+
+Observation-only coverage adds response fields without changing snapshot schema
+11 or existing desired-row meanings. Clients reading older hosts should treat an
+absent `observation_paths` field as unavailable coverage, not proof that all managed
+parameters are observed. Validation on 2026-11-16 covers type-policy changes,
+withdrawn-path privacy, missing/stale/fresh read-only evidence, lifecycle
+invalidation, unchanged empty-desired convergence and no saves, reminder repair or
+device handoff. The existing API/callback check also verifies the new metadata.

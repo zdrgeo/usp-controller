@@ -16,7 +16,7 @@ import (
 func TestTwinDiffAPIUsesReadOnlyCallbackAndAccessChecks(t *testing.T) {
 	id := device.DeviceIdentity{Tenant: "t", ControllerID: "c", AgentID: "device"}
 	opts := deviceactor.DefaultOptions()
-	opts.Policy = &device.TwinPolicy{SiteID: "site", CommandTimeoutSeconds: 30, Paths: map[string]device.ManagedPath{"Device.Test.Value": {Type: "string", Writable: true}}}
+	opts.Policy = &device.TwinPolicy{SiteID: "site", CommandTimeoutSeconds: 30, Paths: map[string]device.ManagedPath{"Device.Test.Value": {Type: "string", Writable: true}, "Device.Test.ReadOnly": {Type: "string"}}}
 	backend := &twinBackend{}
 	actor, err := deviceactor.New(id, backend, opts)
 	if err != nil {
@@ -60,7 +60,7 @@ func TestTwinDiffAPIUsesReadOnlyCallbackAndAccessChecks(t *testing.T) {
 	before := string(backend.state)
 	w := call(handler, "/v2/devices/device/twin/diff", token, "site")
 	var diff device.TwinDiff
-	if err = json.Unmarshal(w.Body.Bytes(), &diff); err != nil || w.Code != 200 || w.Header().Get("Cache-Control") != "no-store" || len(diff.Paths) != 1 || diff.Paths[0].State != "matching" || diff.Convergence != "converged" || strings.Contains(w.Body.String(), "SENSITIVE_VALUE") || string(backend.state) != before {
+	if err = json.Unmarshal(w.Body.Bytes(), &diff); err != nil || w.Code != 200 || w.Header().Get("Cache-Control") != "no-store" || len(diff.Paths) != 1 || diff.Paths[0].State != "matching" || diff.Convergence != "converged" || len(diff.ObservationPaths) != 1 || diff.ObservationPaths[0].Path != "Device.Test.ReadOnly" || diff.ObservationPaths[0].State != "missing" || strings.Contains(w.Body.String(), "SENSITIVE_VALUE") || string(backend.state) != before {
 		t.Fatal(w.Code, w.Body.String(), err)
 	}
 	calls := invoker.calls
