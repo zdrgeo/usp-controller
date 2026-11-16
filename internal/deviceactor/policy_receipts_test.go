@@ -1,6 +1,7 @@
 package deviceactor
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -13,6 +14,11 @@ func TestDesiredReceiptRecoverySurvivesPolicyWithdrawalWithoutReapplyingIntent(t
 		t.Run(mode, func(t *testing.T) {
 			a, b, f, _ := managedActor(t)
 			original := desired("accepted", 0)
+			status, err := a.GetStatus(ctx)
+			if err != nil || !ValidTwinPolicyFingerprint(status.TwinPolicyFingerprint) {
+				t.Fatal(status, err)
+			}
+			original.ExpectedPolicyFingerprint = status.TwinPolicyFingerprint
 			b.ambiguous = true
 			if _, err := a.SetDesired(ctx, original); err == nil {
 				t.Fatal("ambiguous admission reported success")
@@ -107,5 +113,68 @@ func TestReportReceiptRecoverySurvivesPolicyChangeAndClockRollback(t *testing.T)
 	}
 	if b.saves != saves || string(b.state) != before {
 		t.Fatal("recovery or rejected report changed stored evidence")
+	}
+}
+
+func TestDesiredPolicyFingerprintGuardsNewIntentAndPreservesLegacyReceipts(t *testing.T) {
+	a, b, f, _ := managedActor(t)
+	r := desired("legacy-admission", 0)
+	if _, err := a.SetDesired(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	// A receipt fingerprint from the original request shape must remain usable.
+	oldFP, err := fingerprint(struct {
+		ID               device.RequestID
+		ExpectedRevision uint64
+		Values           map[string]device.ParameterValue
+		Remove           []string
+	}{r.ID, r.ExpectedRevision, r.Values, r.Remove})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := a.load(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldReceipt := s.Receipts[r.ID]
+	oldReceipt.Fingerprint = oldFP
+	s.Receipts[r.ID] = oldReceipt
+	b.state, _ = json.Marshal(s)
+	b.failSave = true
+	before, saves := string(b.state), b.saves
+	if receipt, err := a.SetDesired(ctx, r); err != nil || receipt.Revision != 1 || b.saves != saves || string(b.state) != before {
+		t.Fatal("optional guard stranded a historical receipt", receipt, err)
+	}
+	prior, err := a.GetStatus(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := a.opts
+	opts.Freshness += time.Second // The observation policy is part of admission context.
+	restarted, err := NewExecuting(identity, b, opts, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := restarted.GetStatus(ctx)
+	if err != nil || current.TwinPolicyFingerprint == prior.TwinPolicyFingerprint {
+		t.Fatal("changed observation policy retained its admission token", current, err)
+	}
+	fresh := desired("new-intent", 1)
+	fresh.ExpectedPolicyFingerprint = prior.TwinPolicyFingerprint
+	if _, err := restarted.SetDesired(ctx, fresh); !errors.Is(err, ErrConflict) || b.saves != saves || string(b.state) != before {
+		t.Fatal("stale policy guard changed state", err)
+	}
+	fresh.ExpectedPolicyFingerprint = "not-a-fingerprint"
+	if _, err := restarted.SetDesired(ctx, fresh); !errors.Is(err, ErrInvalid) {
+		t.Fatal("malformed policy guard accepted", err)
+	}
+	fresh.ExpectedPolicyFingerprint = current.TwinPolicyFingerprint
+	b.failSave = false
+	if receipt, err := restarted.SetDesired(ctx, fresh); err != nil || receipt.Revision != 2 || len(f.calls) != 0 {
+		t.Fatal("current policy guard failed or dispatched", receipt, err)
+	}
+	unchanged, err := restarted.GetStatus(ctx)
+	if err != nil || unchanged.TwinPolicyFingerprint != current.TwinPolicyFingerprint {
+		t.Fatal("desired state changed policy identity", unchanged, err)
 	}
 }

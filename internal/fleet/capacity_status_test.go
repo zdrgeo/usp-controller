@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"example.com/usp-controller/internal/device"
@@ -15,6 +16,7 @@ func TestProjectionAcceptsCurrentReasonsAndValidatedOptionalCapacity(t *testing.
 	}
 	p, store, _ := fixture(t)
 	current := status(2)
+	current.TwinPolicyFingerprint = strings.Repeat("a", 64)
 	capacity := current.RemainingCapacity()
 	current.Capacity = &capacity
 	p.invoker = invokeFunc(func(_ context.Context, _ device.DeviceIdentity, method string, _ any) (json.RawMessage, error) {
@@ -32,7 +34,7 @@ func TestProjectionAcceptsCurrentReasonsAndValidatedOptionalCapacity(t *testing.
 		}
 	}
 	reopened, err := newProjection(p.opts, map[string]device.DeviceIdentity{"a": identity("a"), "b": identity("b")}, p.invoker, store)
-	if err != nil || reopened.rows["a"].Snapshot.Capacity == nil || *reopened.rows["a"].Snapshot.Capacity != capacity {
+	if err != nil || reopened.rows["a"].Snapshot.Capacity == nil || *reopened.rows["a"].Snapshot.Capacity != capacity || reopened.rows["a"].Snapshot.TwinPolicyFingerprint != current.TwinPolicyFingerprint {
 		t.Fatal("capacity status did not survive projection restart", err)
 	}
 	expected := capacity
@@ -43,6 +45,11 @@ func TestProjectionAcceptsCurrentReasonsAndValidatedOptionalCapacity(t *testing.
 		t.Fatal("bad headroom replaced valid cached evidence", row)
 	}
 	current.Capacity = nil
+	current.TwinPolicyFingerprint = "invalid"
+	if err := validateStatus(current, "site"); !errors.Is(err, ErrInvalid) {
+		t.Fatal("malformed policy fingerprint accepted", err)
+	}
+	current.TwinPolicyFingerprint = ""
 	current.Reconciliation = "unreviewed-reason"
 	if err = validateStatus(current, "site"); !errors.Is(err, ErrInvalid) {
 		t.Fatal("unknown reason accepted", err)

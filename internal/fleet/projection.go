@@ -329,6 +329,9 @@ func validateStatus(s deviceactor.Status, site string) error {
 			return fmt.Errorf("%w: unknown command state", ErrInvalid)
 		}
 	}
+	if s.TwinPolicyFingerprint != "" && !deviceactor.ValidTwinPolicyFingerprint(s.TwinPolicyFingerprint) {
+		return fmt.Errorf("%w: invalid twin policy fingerprint", ErrInvalid)
+	}
 	if s.ObservationCoverage != nil && !s.ObservationCoverage.Valid() {
 		return fmt.Errorf("%w: inconsistent observation coverage", ErrInvalid)
 	}

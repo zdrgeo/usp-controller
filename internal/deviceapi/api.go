@@ -27,10 +27,11 @@ type Options struct {
 	TwinEnabled bool
 }
 type DesiredInput struct {
-	RequestID        device.RequestID                 `json:"request_id"`
-	ExpectedRevision uint64                           `json:"expected_revision"`
-	Values           map[string]device.ParameterValue `json:"values"`
-	Remove           []string                         `json:"remove"`
+	ExpectedPolicyFingerprint string                           `json:"expected_policy_fingerprint,omitempty"`
+	RequestID                 device.RequestID                 `json:"request_id"`
+	ExpectedRevision          uint64                           `json:"expected_revision"`
+	Values                    map[string]device.ParameterValue `json:"values"`
+	Remove                    []string                         `json:"remove"`
 }
 
 // Handler routes only explicit inventory entries; readiness of MQTT is not an
@@ -286,7 +287,7 @@ func Handler(next http.Handler, invoker Invoker, devices map[string]device.Devic
 				http.Error(w, "invalid or reserved request ID", 400)
 				return
 			}
-			b, err := invoker.Invoke(r.Context(), id, "SetDesired", device.SetDesiredRequest{ID: input.RequestID, ExpectedRevision: input.ExpectedRevision, Values: input.Values, Remove: input.Remove})
+			b, err := invoker.Invoke(r.Context(), id, "SetDesired", device.SetDesiredRequest{ExpectedPolicyFingerprint: input.ExpectedPolicyFingerprint, ID: input.RequestID, ExpectedRevision: input.ExpectedRevision, Values: input.Values, Remove: input.Remove})
 			if err != nil {
 				failure(w, err)
 				return

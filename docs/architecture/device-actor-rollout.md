@@ -621,3 +621,14 @@ have usable read evidence, but its precedence cannot hide an invalid observation
 zero freshness. Existing policy-change and read-only diagnostic checks cover the
 views and unchanged stored snapshot. Legacy remains the default; schema 12 and
 command execution are unchanged.
+
+### Optional policy-bound desired admission
+
+Actor status now exposes `twin_policy_fingerprint`, and desired PATCH accepts an
+optional `expected_policy_fingerprint`. New intent conflicts when the managed
+policy or effective observation freshness differs from the caller's reviewed
+status. Identical retries retain their original receipt despite later policy
+changes; unguarded historical request fingerprints are preserved. See the
+[policy guard](device-twin-policy-guard.md) for its admission-only scope and rollout
+compatibility. Legacy remains the default; schema 12 and execution semantics are
+unchanged.

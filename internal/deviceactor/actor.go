@@ -392,6 +392,9 @@ func (a *Actor) SetDesired(ctx context.Context, r device.SetDesiredRequest) (dev
 	if r.ID == "" || strings.HasPrefix(string(r.ID), "reconcile-") || len(r.Values)+len(r.Remove) == 0 {
 		return zero, ErrInvalid
 	}
+	if r.ExpectedPolicyFingerprint != "" && !ValidTwinPolicyFingerprint(r.ExpectedPolicyFingerprint) {
+		return zero, ErrInvalid
+	}
 	seen := map[string]bool{}
 	remove := append([]string(nil), r.Remove...)
 	sort.Strings(remove)
@@ -426,6 +429,15 @@ func (a *Actor) SetDesired(ctx context.Context, r device.SetDesiredRequest) (dev
 			return zero, err
 		}
 		return device.DesiredReceipt{ID: r.ID, Revision: prior.Revision}, nil
+	}
+	if r.ExpectedPolicyFingerprint != "" {
+		current, err := a.twinPolicyFingerprint()
+		if err != nil {
+			return zero, err
+		}
+		if current != r.ExpectedPolicyFingerprint {
+			return zero, ErrConflict
+		}
 	}
 	// An immutable receipt recovers prior admission; current policy applies only
 	// to new intent and must not make old retries reapply or lose that receipt.

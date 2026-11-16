@@ -79,6 +79,16 @@ func TestTwinAPIAuthSiteCASAndStatus(t *testing.T) {
 	if invoker.calls != 0 {
 		t.Fatal("invoked before auth/site/allowlist validation")
 	}
+	statusRead := call(h, "GET", "/v2/devices/device/status", "", token, "site-a")
+	var policyStatus deviceactor.Status
+	if err := json.Unmarshal(statusRead.Body.Bytes(), &policyStatus); err != nil || statusRead.Code != 200 || !deviceactor.ValidTwinPolicyFingerprint(policyStatus.TwinPolicyFingerprint) {
+		t.Fatal("missing policy admission token", statusRead.Body.String(), err)
+	}
+	body = strings.TrimSuffix(body, "}") + `,"expected_policy_fingerprint":"` + policyStatus.TwinPolicyFingerprint + `"}`
+	stalePolicy := strings.Replace(body, policyStatus.TwinPolicyFingerprint, strings.Repeat("0", 64), 1)
+	if w := call(h, "PATCH", "/v2/devices/device/desired", stalePolicy, token, "site-a"); w.Code != 409 {
+		t.Fatal("stale policy guard admitted desired state", w.Code, w.Body.String())
+	}
 	for i := 0; i < 2; i++ {
 		if w := call(h, "PATCH", "/v2/devices/device/desired", body, token, "site-a"); w.Code != 200 || w.Header().Get("X-USP-Site") != "site-a" {
 			t.Fatal(w.Code, w.Body.String())

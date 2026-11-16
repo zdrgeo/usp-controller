@@ -111,6 +111,9 @@ type SetDesiredRequest struct {
 	Values           map[string]ParameterValue
 	// Remove relinquishes desired management of a path; it is not USP Delete.
 	Remove []string
+	// Optional admission guard. Omit from JSON when empty to preserve historical
+	// receipt fingerprints for callers that did not supply the guard.
+	ExpectedPolicyFingerprint string `json:",omitempty"`
 }
 type DesiredReceipt struct {
 	ID       RequestID
