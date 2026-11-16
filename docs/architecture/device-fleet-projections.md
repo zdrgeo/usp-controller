@@ -202,3 +202,32 @@ read-only reads with failed write/reminder backends, projection persistence/reop
 early expiry after clearing startup invalidation, malformed-summary rejection and
 older-host compatibility. The change uses snapshot schema 11 without storage or
 command-delivery changes. Legacy remains the default.
+
+### Fleet observation-health totals
+
+`GET /v2/fleet/summary` now adds `fresh_observation_coverage`. It aggregates the
+managed-path counts from validated coverage diagnostics on **fresh projection
+rows only**. It contains `covered_devices`, `unavailable_devices`, `managed_paths`
+and the same `fresh`, `missing`, `invalid`, `future`, `mutation_invalidated`,
+`topology_invalidated` and `stale` path counts. No path names or values are added.
+
+`covered_devices + unavailable_devices` equals the existing fresh-device count.
+Unavailable here means a fresh cached status omitted the optional diagnostic
+(for example, an older host or a device without a managed policy). It is not the
+fleet envelope's unavailable-row count. Stale and unavailable rows contribute
+neither path totals nor covered/unmeasured devices. Consult the existing
+`freshness` counts to assess the rest of the fleet; zero totals do not establish
+that all devices are observed or healthy.
+
+A valid covered device can report zero fresh parameters: recently sampled status
+and usable parameter evidence are different measures. Per-row expiry and the
+existing invalidation/failure rules apply before aggregation. Device sample times
+remain on the per-device rows; `generated_at` is the local summary time, not an
+atomic fleet-wide observation time. Queries remain cache-only under one local
+read, without actor fanout, writes or refresh scheduling.
+
+The response field is additive. Older summary producers omit it; treat that as
+unavailable aggregation rather than zero missing paths. Actor snapshots and local
+projection row formats are unchanged. Focused validation covers mixed old/current
+hosts, expiry exclusion before normal cache TTL, persistence-failure exclusion
+and no query-side calls or writes. Legacy remains the default.

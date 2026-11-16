@@ -554,3 +554,13 @@ that expiry passes or its sample lies in the reader's future, and normal bounded
 background refresh can replace it. Old status without the field remains readable;
 desired convergence and execution policy are unchanged. Legacy remains the
 default; snapshot schema 11 and backend protocols are unchanged.
+
+### Fleet observation-health aggregation
+
+The fleet summary now totals managed observation states from fresh cached rows,
+with explicit covered/unmeasured device counts. Expired evidence and invalidated
+or unhealthy projections do not contribute. Missing optional diagnostics remain
+unmeasured instead of looking healthy. The additive response contains no path names
+or values and requires no actor fanout. See [fleet totals](device-fleet-projections.md#fleet-observation-health-totals)
+for denominators and compatibility. Legacy remains the default; schema 11,
+projection row storage and command delivery are unchanged.

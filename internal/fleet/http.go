@@ -124,10 +124,12 @@ func (p *Projection) Handler(next http.Handler, token string) http.Handler {
 		freshness := map[string]int{"fresh": 0, "stale": 0, "unavailable": 0}
 		convergence := map[string]int{}
 		states := map[device.CommandState]int{}
+		observations := ObservationTotals{}
 		for _, row := range p.rows {
 			v := p.view(row, now)
 			freshness[v.Freshness]++
 			if v.Freshness == "fresh" {
+				observations.add(v.Snapshot.ObservationCoverage)
 				convergence[v.Snapshot.Convergence]++
 				for k, n := range v.Snapshot.CommandStates {
 					states[k] += n
@@ -138,15 +140,16 @@ func (p *Projection) Handler(next http.Handler, token string) http.Handler {
 		total := len(p.rows)
 		p.mu.Unlock()
 		writeJSON(w, 200, struct {
-			SiteID             string                      `json:"site_id"`
-			Consistency        string                      `json:"consistency"`
-			GeneratedAt        time.Time                   `json:"generated_at"`
-			PersistenceHealthy bool                        `json:"persistence_healthy"`
-			Total              int                         `json:"total"`
-			Freshness          map[string]int              `json:"freshness"`
-			FreshConvergence   map[string]int              `json:"fresh_convergence"`
-			FreshCommandStates map[device.CommandState]int `json:"fresh_command_states"`
-		}{p.opts.SiteID, "eventually_consistent", now, healthy, total, freshness, convergence, states})
+			SiteID                   string                      `json:"site_id"`
+			Consistency              string                      `json:"consistency"`
+			GeneratedAt              time.Time                   `json:"generated_at"`
+			PersistenceHealthy       bool                        `json:"persistence_healthy"`
+			Total                    int                         `json:"total"`
+			Freshness                map[string]int              `json:"freshness"`
+			FreshConvergence         map[string]int              `json:"fresh_convergence"`
+			FreshCommandStates       map[device.CommandState]int `json:"fresh_command_states"`
+			FreshObservationCoverage ObservationTotals           `json:"fresh_observation_coverage"`
+		}{p.opts.SiteID, "eventually_consistent", now, healthy, total, freshness, convergence, states, observations})
 	}))
 	return mux
 }
