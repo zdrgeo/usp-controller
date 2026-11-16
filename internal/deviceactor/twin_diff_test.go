@@ -148,6 +148,18 @@ func TestTwinDiffObservationOnlyCoverageAndLifecycleInvalidation(t *testing.T) {
 		if !reflect.DeepEqual(states, want) || !reflect.DeepEqual(paths, []string{"Device.Fresh.Value", "Device.Missing.Value", "Device.Retyped.Value", "Device.Stale.Value"}) {
 			t.Fatal(diff)
 		}
+		status, err := a.GetStatus(ctx)
+		coverage := status.ObservationCoverage
+		if err != nil || coverage == nil || !coverage.Valid() || !coverage.AsOf.Equal(*now) || coverage.ManagedPaths != 4 || coverage.Missing != 1 || coverage.Invalid != 1 || status.Convergence != "converged" {
+			t.Fatal("status lost sampled observation health", status, err)
+		}
+		if want[0] == "fresh" {
+			if coverage.Fresh != 1 || coverage.Stale != 1 || coverage.FreshUntil == nil || !coverage.FreshUntil.Equal(now.Add(a.opts.Freshness)) {
+				t.Fatal("fresh coverage/expiry incorrect", coverage)
+			}
+		} else if coverage.TopologyInvalidated != 2 || coverage.Fresh != 0 || coverage.FreshUntil != nil {
+			t.Fatal("lifecycle coverage remained fresh", coverage)
+		}
 		raw, _ := json.Marshal(diff)
 		if strings.Contains(string(raw), "SECRET_") || strings.Contains(string(raw), "Device.Withdrawn.Value") || string(b.state) != before || b.saves != saves || len(f.calls) != 0 {
 			t.Fatal("coverage leaked values/withdrawn paths or changed state", string(raw))

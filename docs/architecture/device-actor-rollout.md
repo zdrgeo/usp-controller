@@ -543,3 +543,14 @@ The read still performs one bounded snapshot load and one clock reading with no
 writes or maintenance. Existing API access controls and default-route absence
 apply. See [twin diff](device-twin-diff.md) for response compatibility and limits.
 Legacy remains the default; snapshot schema 11 and backend protocols are unchanged.
+
+### Observation coverage in fleet status
+
+Actor status now samples value-free counts for every managed path, including
+read-only paths, plus the earliest expiry among fresh observations. Optional
+[observation coverage](device-fleet-projections.md#sampled-observation-coverage)
+is validated and retained by fleet projections. Cached status becomes stale when
+that expiry passes or its sample lies in the reader's future, and normal bounded
+background refresh can replace it. Old status without the field remains readable;
+desired convergence and execution policy are unchanged. Legacy remains the
+default; snapshot schema 11 and backend protocols are unchanged.

@@ -226,7 +226,7 @@ func (p *Projection) Run(ctx context.Context) error {
 				p.cursor = (p.cursor + 1) % len(p.ids)
 				r := p.rows[id]
 				retryReady := r.AttemptedAt.IsZero() || r.AttemptedAt.After(now) || !now.Before(r.AttemptedAt.Add(5*time.Second))
-				due := r.Pending || r.CapturedAt.IsZero() || r.CapturedAt.After(now) || !now.Before(r.CapturedAt.Add(p.opts.RefreshInterval))
+				due := (r.Snapshot != nil && r.Snapshot.ObservationCoverage != nil && !r.Snapshot.ObservationCoverage.CurrentAt(now)) || r.Pending || r.CapturedAt.IsZero() || r.CapturedAt.After(now) || !now.Before(r.CapturedAt.Add(p.opts.RefreshInterval))
 				if !p.inFlight[id] && retryReady && due {
 					p.inFlight[id] = true
 					jobs = append(jobs, id)
@@ -328,6 +328,9 @@ func validateStatus(s deviceactor.Status, site string) error {
 		default:
 			return fmt.Errorf("%w: unknown command state", ErrInvalid)
 		}
+	}
+	if s.ObservationCoverage != nil && !s.ObservationCoverage.Valid() {
+		return fmt.Errorf("%w: inconsistent observation coverage", ErrInvalid)
 	}
 	if s.Capacity != nil && *s.Capacity != s.RemainingCapacity() {
 		return fmt.Errorf("%w: inconsistent capacity headroom", ErrInvalid)

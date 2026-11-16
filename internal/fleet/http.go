@@ -32,7 +32,7 @@ func (p *Projection) view(r row, now time.Time) View {
 	freshness := "fresh"
 	if r.Snapshot == nil {
 		freshness = "unavailable"
-	} else if r.Pending || p.inFlight[r.Identity.AgentID] || r.LastError != "" || p.fault != nil || p.closed || r.CapturedAt.After(now) || !now.Before(r.CapturedAt.Add(p.opts.StaleAfter)) {
+	} else if (r.Snapshot.ObservationCoverage != nil && !r.Snapshot.ObservationCoverage.CurrentAt(now)) || r.Pending || p.inFlight[r.Identity.AgentID] || r.LastError != "" || p.fault != nil || p.closed || r.CapturedAt.After(now) || !now.Before(r.CapturedAt.Add(p.opts.StaleAfter)) {
 		freshness = "stale"
 	}
 	return View{Identity: r.Identity, Freshness: freshness, CapturedAt: r.CapturedAt, RefreshedAt: r.RefreshedAt, RefreshPending: r.Pending || p.inFlight[r.Identity.AgentID], LastError: r.LastError, Snapshot: r.Snapshot}

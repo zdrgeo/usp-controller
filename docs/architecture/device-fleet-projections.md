@@ -168,3 +168,37 @@ previously these valid actor responses could leave the projection in refresh fai
 Unknown reasons and inconsistent headroom still fail validation and preserve the
 last valid snapshot as stale. No projection schema migration or actor mutation is
 required.
+
+## Sampled observation coverage
+
+Current actor status optionally includes `observation_coverage`, containing one
+`as_of` time and counts across all configured managed paths (including read-only
+paths and paths without desired intent). `managed_paths` is partitioned into
+`fresh`, `missing`, `invalid`, `future`, `mutation_invalidated`,
+`topology_invalidated` and `stale`. The summary exposes no path names, values,
+command bodies or device-provided timestamps. No managed policy means the field
+is absent; absence from an older host/cache means unavailable coverage, not zero
+missing parameters. Desired convergence remains a separate diagnostic.
+
+When fresh observations exist, `fresh_until` is their earliest recorded expiry.
+It is absent when none are fresh. Fleet reads mark the entire cached status stale
+at that boundary, or when its `as_of` lies in the fleet reader's future. The
+background loop also treats those boundaries as due for refresh under existing
+worker, retry-spacing and read-only limits. API reads still do not fan out to
+actors. A refreshed summary may legitimately report stale/missing observations
+while the projection itself is fresh: the latter means current sampling, not
+healthy device state.
+
+Count bounds, their exact partition total, sample time and expiry consistency are
+validated before accepting or restoring status. Invalid refreshes retain prior
+evidence and mark it stale. Old rows without the optional field remain readable.
+These are sampled diagnostics, not a guarantee against changes between reads;
+notification hints, normal cache age and failure invalidation still apply. Clock
+skew can conservatively make rows stale. Old projection binaries ignore the new
+field, so upgrade serving fleet readers to enforce its additional expiry rule.
+
+Validation on 2026-11-16 covers actor summaries before/after lifecycle invalidation,
+read-only reads with failed write/reminder backends, projection persistence/reopen,
+early expiry after clearing startup invalidation, malformed-summary rejection and
+older-host compatibility. The change uses snapshot schema 11 without storage or
+command-delivery changes. Legacy remains the default.

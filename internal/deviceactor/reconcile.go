@@ -172,6 +172,7 @@ func (a *Actor) scheduleReconciliation(ctx context.Context, s *snapshot) error {
 
 // Status contains no desired/reported values and performs no fleet fanout.
 type Status struct {
+	ObservationCoverage             *ObservationCoverage        `json:"observation_coverage,omitempty"`
 	Capacity                        *CapacityStatus             `json:"capacity,omitempty"`
 	ReservedCompletionBytes         int                         `json:"reserved_completion_bytes"`
 	ReservedCompletionNotifications int                         `json:"reserved_completion_notifications"`
@@ -202,6 +203,7 @@ func (a *Actor) GetStatus(ctx context.Context) (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
+	now := a.opts.Now().UTC()
 	_, reason := a.planReconciliation(s)
 	if reason == "waiting_observation" {
 		_, reason = a.planObservation(s)
@@ -213,7 +215,7 @@ func (a *Actor) GetStatus(ctx context.Context) (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	out := Status{ReservedCompletionBytes: a.opts.CompletionReserve.StateBytes, ReservedCompletionNotifications: a.opts.CompletionReserve.Notifications, ExecutionPaused: s.Execution.Paused, ExecutionRevision: s.Execution.Revision, Convergence: a.convergence(s), DesiredRevision: s.DesiredRevision, ReportedRevision: s.ReportedRevision, Reconciliation: reason, CommandStates: map[device.CommandState]int{}, PendingEvents: len(s.Outbox), NotificationReceipts: len(s.Inbox), MutationReceipts: len(s.Receipts), StateBytes: len(b), MaxStateBytes: a.opts.MaxBytes, MaxCommands: a.opts.MaxCommands, MaxReceipts: a.opts.MaxReceipts, LastContact: s.LastContact}
+	out := Status{ReservedCompletionBytes: a.opts.CompletionReserve.StateBytes, ReservedCompletionNotifications: a.opts.CompletionReserve.Notifications, ExecutionPaused: s.Execution.Paused, ExecutionRevision: s.Execution.Revision, Convergence: a.convergenceAt(s, now), ObservationCoverage: a.observationCoverage(s, now), DesiredRevision: s.DesiredRevision, ReportedRevision: s.ReportedRevision, Reconciliation: reason, CommandStates: map[device.CommandState]int{}, PendingEvents: len(s.Outbox), NotificationReceipts: len(s.Inbox), MutationReceipts: len(s.Receipts), StateBytes: len(b), MaxStateBytes: a.opts.MaxBytes, MaxCommands: a.opts.MaxCommands, MaxReceipts: a.opts.MaxReceipts, LastContact: s.LastContact}
 	if a.opts.Policy != nil {
 		out.SiteID = a.opts.Policy.SiteID
 	}
