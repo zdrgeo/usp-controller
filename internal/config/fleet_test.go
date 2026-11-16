@@ -2,6 +2,7 @@ package config
 
 import (
 	"example.com/usp-controller/internal/device"
+	"strings"
 	"testing"
 )
 
@@ -13,8 +14,12 @@ func TestFleetExplicitOptInAndBounds(t *testing.T) {
 	if err := c.Validate(); err != nil {
 		t.Fatal(err)
 	}
+	c.ActorCanary.Fleet.ExpectedTwinPolicyFingerprint = strings.Repeat("a", 64)
+	if err := c.Validate(); err != nil {
+		t.Fatal("valid policy expectation rejected", err)
+	}
 	for _, mutate := range []func(*Config){
-		func(c *Config) { c.ActorCanary.Enabled = false }, func(c *Config) { c.ActorCanary.Twin = nil }, func(c *Config) { c.ActorCanary.Fleet.Directory = "" }, func(c *Config) { c.ActorCanary.Fleet.Workers = 17 }, func(c *Config) { c.ActorCanary.Fleet.RefreshSeconds = 1 }, func(c *Config) { c.ActorCanary.Fleet.StaleSeconds = 30 }, func(c *Config) { c.ActorCanary.Fleet.Workers = -1 },
+		func(c *Config) { c.ActorCanary.Fleet.ExpectedTwinPolicyFingerprint = "invalid" }, func(c *Config) { c.ActorCanary.Enabled = false }, func(c *Config) { c.ActorCanary.Twin = nil }, func(c *Config) { c.ActorCanary.Fleet.Directory = "" }, func(c *Config) { c.ActorCanary.Fleet.Workers = 17 }, func(c *Config) { c.ActorCanary.Fleet.RefreshSeconds = 1 }, func(c *Config) { c.ActorCanary.Fleet.StaleSeconds = 30 }, func(c *Config) { c.ActorCanary.Fleet.Workers = -1 },
 	} {
 		c := fleetConfig()
 		mutate(&c)

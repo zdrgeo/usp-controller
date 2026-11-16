@@ -643,3 +643,13 @@ payload/deadline receipt fingerprints. Refresh keeps its existing current-policy
 scope normalization and projection prerequisites. See [policy guards](device-twin-policy-guard.md#explicit-commands-and-twin-refresh).
 Legacy remains the default; schema 12, queued execution scope and retry semantics
 are unchanged.
+
+### Optional fleet policy expectation
+
+The fleet projector can now require `expected_twin_policy_fingerprint` for fresh
+status. Missing or different fingerprints retain prior evidence as stale rather
+than replacing it or contributing to fresh summaries. Valid historical cache rows
+still reopen during a policy rollout. The setting is opt-in and empty preserves
+older-host compatibility. See [fleet policy matching](device-fleet-projections.md#optional-expected-twin-policy).
+Legacy remains the default; actor execution, schema 12 and cache row format are
+unchanged.

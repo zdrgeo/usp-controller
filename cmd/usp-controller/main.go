@@ -70,7 +70,7 @@ func run() error {
 		defer actorRuntime.Close()
 		if configured := cfg.ActorCanary.Fleet; configured != nil {
 			f := configured.Normalized()
-			projection, err = fleet.Open(fleet.Options{Directory: f.Directory, SiteID: cfg.ActorCanary.Twin.SiteID, RefreshInterval: time.Duration(f.RefreshSeconds) * time.Second, StaleAfter: time.Duration(f.StaleSeconds) * time.Second, Workers: f.Workers, Now: time.Now}, actorRuntime.Devices, actorRuntime.Client)
+			projection, err = fleet.Open(fleet.Options{ExpectedTwinPolicyFingerprint: f.ExpectedTwinPolicyFingerprint, Directory: f.Directory, SiteID: cfg.ActorCanary.Twin.SiteID, RefreshInterval: time.Duration(f.RefreshSeconds) * time.Second, StaleAfter: time.Duration(f.StaleSeconds) * time.Second, Workers: f.Workers, Now: time.Now}, actorRuntime.Devices, actorRuntime.Client)
 			if err != nil {
 				return err
 			}

@@ -231,3 +231,37 @@ unavailable aggregation rather than zero missing paths. Actor snapshots and loca
 projection row formats are unchanged. Focused validation covers mixed old/current
 hosts, expiry exclusion before normal cache TTL, persistence-failure exclusion
 and no query-side calls or writes. Legacy remains the default.
+
+## Optional expected twin policy
+
+An enabled `actor_canary.fleet` configuration can set
+`expected_twin_policy_fingerprint` to a reviewed `twin_policy_fingerprint` from
+authoritative actor status. The optional value must be a canonical lowercase
+SHA-256 digest. Omitted/empty preserves the existing acceptance of status from
+older hosts without that diagnostic. This is one expected policy for the configured
+projection cohort; it is not a per-device policy map.
+
+When configured, a newly read status must contain that exact digest before it can
+replace a cached snapshot. A mismatch or missing digest follows the existing
+`refresh_failed` path: prior evidence remains retained and stale, the pending bit
+remains set and bounded background reads can retry. A later matching read clears
+the failure normally. Mismatched cached rows cannot contribute to fresh list or
+summary counts. Query requests still do not invoke actors or schedule work.
+
+Changing the expectation does not rewrite cached policy identity, delete old
+rows or prevent reopening valid historical cache data. Startup already marks
+restored rows pending; they need a matching status read before being trusted as
+fresh. Coordinate the expected digest with the reviewed policy rollout. A bad
+but well-formed expectation can leave the whole projection stale until corrected.
+
+This option gates projection trust only. It neither pauses actor dispatch nor
+changes admission, readiness, snapshot ownership or retry permissions. The digest
+is not authentication or proof that all serving hosts share configuration. Core
+controller behavior remains independent of the optional cache. Legacy remains
+the default; actor schema 12, local projection row format and backend protocols
+are unchanged.
+
+Focused checks cover restart with cached evidence from an older policy, rejection
+of mismatched/missing refreshed identity, recovery with matching status, default
+compatibility and configuration bounds. Infrastructure fault drills are not
+repeated for this read-side policy filter.

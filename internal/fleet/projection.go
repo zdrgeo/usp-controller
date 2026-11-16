@@ -28,13 +28,17 @@ type Invoker interface {
 	Invoke(context.Context, device.DeviceIdentity, string, any) (json.RawMessage, error)
 }
 type Options struct {
-	Directory, SiteID           string
-	RefreshInterval, StaleAfter time.Duration
-	Workers                     int
-	Now                         func() time.Time
+	ExpectedTwinPolicyFingerprint string
+	Directory, SiteID             string
+	RefreshInterval, StaleAfter   time.Duration
+	Workers                       int
+	Now                           func() time.Time
 }
 
 func (o Options) validate() error {
+	if o.ExpectedTwinPolicyFingerprint != "" && !deviceactor.ValidTwinPolicyFingerprint(o.ExpectedTwinPolicyFingerprint) {
+		return ErrInvalid
+	}
 	if o.Directory == "" || o.SiteID == "" || len(o.SiteID) > 128 || o.Now == nil || o.RefreshInterval < 5*time.Second || o.RefreshInterval > time.Hour || o.StaleAfter < o.RefreshInterval || o.StaleAfter > 24*time.Hour || o.Workers < 1 || o.Workers > 16 {
 		return ErrInvalid
 	}
@@ -272,6 +276,9 @@ func (p *Projection) refresh(ctx context.Context, id string) {
 	if err == nil {
 		err = validateStatus(status, p.opts.SiteID)
 	}
+	if err == nil && !p.policyMatches(&status) {
+		err = ErrConflict
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	defer p.signal()
@@ -291,6 +298,12 @@ func (p *Projection) refresh(ctx context.Context, id string) {
 	}
 	_ = p.commit(id, current) // failure poisons persistence; old snapshots remain stale
 }
+
+// The expected digest gates projection trust only; it never controls actor work.
+func (p *Projection) policyMatches(s *deviceactor.Status) bool {
+	return p.opts.ExpectedTwinPolicyFingerprint == "" || (s != nil && s.TwinPolicyFingerprint == p.opts.ExpectedTwinPolicyFingerprint)
+}
+
 func validateStatus(s deviceactor.Status, site string) error {
 	if s.SiteID != site || s.MaxCommands < 1 || s.MaxCommands > 100000 || s.MaxReceipts < 1 || s.MaxReceipts > 1000000 || s.MaxStateBytes < 1 || s.MaxStateBytes > 64<<20 || s.StateBytes < 0 || s.StateBytes > s.MaxStateBytes || s.PendingEvents < 0 || s.PendingEvents > s.MaxCommands || s.NotificationReceipts < 0 || s.NotificationReceipts > s.MaxReceipts || s.MutationReceipts < 0 || s.MutationReceipts > s.MaxReceipts || s.CommandStates == nil {
 		return ErrInvalid
