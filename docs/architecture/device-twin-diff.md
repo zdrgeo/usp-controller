@@ -18,7 +18,7 @@ shadow actors, without enabling command execution.
 ## View and states
 
 The result includes one `as_of` controller timestamp, desired/reported revisions,
-optional `mutation_barrier_at`, observation-based `convergence`, a count of
+optional `mutation_barrier_at`/`topology_barrier_at`, observation-based `convergence`, a count of
 `hidden_desired_paths`, and `paths` ordered lexically. Rows describe desired paths
 only; reported-only parameters are omitted. Removed policy paths are hidden by
 name while their count remains visible. They can still make overall convergence
@@ -36,11 +36,12 @@ free-form reasons are excluded. State precedence is:
 | `invalid` | The observation is unusable under the current managed type/value policy. |
 | `future` | Its controller receive time is later than `as_of`. |
 | `mutation_invalidated` | It was received at or before a known mutation barrier. |
+| `topology_invalidated` | It was received at or before the latest concrete object-change cutoff. |
 | `stale` | Its ordinary freshness window has ended. |
 | `different` | A usable fresh observation differs from the desired value. |
 | `matching` | A usable fresh observation matches the desired value. |
 
-Future/mutation-invalidated rows expose a zero `fresh_until`; other rows retain
+Future/mutation/topology-invalidated rows expose a zero `fresh_until`; other rows retain
 the observation's recorded expiry for context. Use the state, not that timestamp
 alone, to determine whether a row is usable. Empty desired state returns
 `paths:[]` and converged, preserving existing semantics.
@@ -78,3 +79,7 @@ policy-scoped value-free output, timestamp/state consistency, clock rollback
 preventing dispatch, mutation invalidation, and the full API/client/callback path
 with access checks and default-route absence. Long infrastructure fault drills
 were not repeated for this read/eligibility change.
+
+Schema 10 now exposes topology invalidation and effective mutation high-water
+cutoffs. See [topology observations](device-topology-observations.md) for atomicity,
+clock rollback and rollout limits; older binaries reject the new snapshot schema.

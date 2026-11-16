@@ -781,3 +781,14 @@ of optional host budgets. A pre-begin cancellation leaves accepted intent queued
 a post-begin cancellation retains the attempt for non-replayable unknown recovery.
 Completed maintenance/export work is not undone, and already-entered I/O cannot
 be revoked by a later check. Legacy and snapshot schema 9 remain unchanged.
+
+
+### Topology-aware twin freshness
+
+Concrete ObjectCreation/ObjectDeletion notices now atomically record a
+[topology cutoff](device-topology-observations.md) with their receipt and outbox
+event. Older observations and earlier-started Gets remain historical. New cutoffs
+cover known readings across clock rollback at topology, mutation begin and outcome
+boundaries. The whole tracked twin is invalidated conservatively without creating
+parameter facts or corrective writes. Schema 10 preserves old state without
+invented historical cutoffs; legacy remains the default.

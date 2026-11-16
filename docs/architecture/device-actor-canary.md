@@ -329,9 +329,9 @@ correlation and decision receipts remain bounded and retained.
 
 Acknowledgements introduced schema 4 and execution control introduced
 [schema 5](#durable-per-device-execution-control). Current writers use
-[schema 9](device-mutation-outcomes.md). Schema 1/2/3/4/5/6/7/8 snapshots are read
+[schema 10](device-topology-observations.md). Schema 1/2/3/4/5/6/7/8/9 snapshots are read
 and upgraded on the next atomic save, preserving commands, receipts, twin state
-and events. Older actor binaries reject schema 9: stop/drain the cohort and roll
+and events. Older actor binaries reject schema 10: stop/drain the cohort and roll
 forward rather than rolling an older writer back over upgraded state. The loader verifies that
 every acknowledgement and its immutable fingerprinted receipt agree, and rejects
 acknowledgement metadata hidden in an older schema. Snapshot administration

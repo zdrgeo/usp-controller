@@ -132,3 +132,49 @@ func TestPostMutationEvidenceAndReadOnlyAttempt(t *testing.T) {
 		t.Fatal("read-only attempt invalidated evidence", twin)
 	}
 }
+
+func TestMutationCutoffCoversKnownReadingsAcrossClockRollback(t *testing.T) {
+	for _, phase := range []string{"begin", "outcome"} {
+		t.Run(phase, func(t *testing.T) {
+			a, b, f, now := managedActor(t)
+			original := *now
+			*now = original.Add(10 * time.Second)
+			observe(t, a, "known", *now, "target")
+			if _, err := a.SetDesired(ctx, desired("desired", 0)); err != nil {
+				t.Fatal(err)
+			}
+			expected := *now
+			*now = original.Add(time.Second)
+			if _, err := a.EnqueueCommand(ctx, mutationRequest("mutation", now.Add(time.Hour))); err != nil {
+				t.Fatal(err)
+			}
+			if err := a.Tick(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if phase == "outcome" {
+				*now = original.Add(11 * time.Second)
+				expected = *now
+				observe(t, a, "during", *now, "target")
+				c, _ := a.GetCommand(ctx, "mutation")
+				*now = original.Add(2 * time.Second)
+				if err := a.HandleResponse(ctx, device.DeviceResponse{Identity: identity, Message: setResponse(c.MessageID)}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			*now = original.Add(12 * time.Second)
+			restarted, err := NewExecuting(identity, b, a.opts, f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			diff, err := restarted.GetTwinDiff(ctx)
+			if err != nil || diff.Convergence != "unknown" || diff.Paths[0].State != "mutation_invalidated" || diff.MutationBarrierAt == nil || !diff.MutationBarrierAt.Equal(expected) {
+				t.Fatal("clock recovery resurrected pre-mutation data", diff, err)
+			}
+			observe(t, restarted, "after", *now, "target")
+			twin, _ := restarted.GetTwin(ctx)
+			if twin.Convergence != "converged" {
+				t.Fatal("new evidence could not restore freshness", twin)
+			}
+		})
+	}
+}

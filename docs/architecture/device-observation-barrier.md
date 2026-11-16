@@ -15,8 +15,8 @@ controller does not publish in that invocation. Failure, timeout, cancellation o
 later work and operator unknown acknowledgement do not restore old freshness.
 
 The barrier is rebuilt on each load from retained command attempt timestamps and
-sequences. It uses the greatest known mutation timestamp, so a later attempt with
-a backwards controller clock cannot lower it. Read-only command attempts do not
+sequences and captured observation cutoffs. A new cutoff covers every known
+reported receive time, so clock rollback cannot resurrect pre-invalidation data. Read-only command attempts do not
 advance it. Begin times already exist in attempt provenance. Schema 9 now records
 [mutation outcome times](device-mutation-outcomes.md) with their evidence.
 No extra backend operation or retry is introduced; fencing protocols are unchanged.
@@ -70,3 +70,8 @@ The [twin diff](device-twin-diff.md) now exposes observation eligibility without
 values. Controller receive times later than the current controller time are also
 unusable after clock rollback; they remain historical evidence until time/order
 checks allow newer usable observations.
+
+[Schema 10 topology handling](device-topology-observations.md) adds an atomic
+cutoff for concrete object creation/deletion. The combined freshness boundary
+uses both mutation and topology cutoffs; unsupported object selectors remain
+durable events without trusted projection.

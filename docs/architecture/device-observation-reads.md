@@ -42,10 +42,10 @@ neither feature continuously refreshes state.
 ## Storage and validation
 
 Bootstrap provenance introduced schema 7; current writers use
-[schema 9](device-mutation-outcomes.md). Schemas 1–8 upgrade on the next save while preserving
+[schema 10](device-topology-observations.md). Schemas 1–9 upgrade on the next save while preserving
 their state; generated-read provenance is never invented. The loader checks its
 schema, revision, reserved identity, Get payload and separation from write
-provenance. Older binaries reject schema 9, preventing dispatch with older policy
+provenance. Older binaries reject schema 10, preventing dispatch with older policy
 semantics. Drain senders and roll forward or use a reviewed state migration;
 clearing snapshots is not a rollback procedure. This applies to actor saves even
 when automatic reads are disabled. Storage fencing and backend protocols are

@@ -216,8 +216,14 @@ func (a *Actor) Tick(ctx context.Context) (resultErr error) {
 	if err = transition(&c, device.CommandAttempting, ""); err != nil {
 		return err
 	}
+	if mutatesDevice(request) {
+		cutoff := observationCutoff(s, attemptedAt)
+		c.MutationBarrierAt = &cutoff
+	}
 	s.Commands[id] = c
-	advanceObservationBarrier(s, request, attemptedAt)
+	if c.MutationBarrierAt != nil {
+		advanceObservationBarrier(s, request, *c.MutationBarrierAt)
+	}
 	a.compactQueue(s)
 	if err = a.saveOrdinary(ctx, s); err != nil {
 		return err

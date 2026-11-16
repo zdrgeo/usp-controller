@@ -22,8 +22,11 @@ func (a *Actor) desiredPathState(s *snapshot, path string, want device.Parameter
 	if got.ReceivedAt.After(now) {
 		return "future"
 	}
-	if !s.observationBarrier.IsZero() && !got.ReceivedAt.After(s.observationBarrier) {
+	if !s.mutationBarrier.IsZero() && !got.ReceivedAt.After(s.mutationBarrier) {
 		return "mutation_invalidated"
+	}
+	if s.TopologyBarrier != nil && !got.ReceivedAt.After(s.TopologyBarrier.At) {
+		return "topology_invalidated"
 	}
 	if !now.Before(got.FreshUntil) {
 		return "stale"
@@ -59,9 +62,13 @@ func (a *Actor) GetTwinDiff(ctx context.Context) (device.TwinDiff, error) {
 	}
 	now := a.opts.Now().UTC()
 	out := device.TwinDiff{AsOf: now, DesiredRevision: s.DesiredRevision, ReportedRevision: s.ReportedRevision, Convergence: a.convergenceAt(s, now), Paths: []device.TwinPathDiff{}}
-	if !s.observationBarrier.IsZero() {
-		at := s.observationBarrier
+	if !s.mutationBarrier.IsZero() {
+		at := s.mutationBarrier
 		out.MutationBarrierAt = &at
+	}
+	if s.TopologyBarrier != nil {
+		at := s.TopologyBarrier.At
+		out.TopologyBarrierAt = &at
 	}
 	for path, want := range s.Desired {
 		if a.opts.Policy != nil {
@@ -74,7 +81,7 @@ func (a *Actor) GetTwinDiff(ctx context.Context) (device.TwinDiff, error) {
 		if got, ok := s.Reported[path]; ok {
 			row.HasObservation = true
 			at, until := got.ReceivedAt, got.FreshUntil
-			if row.State == "future" || row.State == "mutation_invalidated" {
+			if row.State == "future" || row.State == "mutation_invalidated" || row.State == "topology_invalidated" {
 				until = time.Time{}
 			}
 			row.ReceivedAt = &at

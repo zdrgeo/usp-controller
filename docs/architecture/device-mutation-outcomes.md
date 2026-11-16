@@ -44,7 +44,9 @@ recorded outcome time; it is not proof that no result or device effect exists.
 
 ## Schema and rollout
 
-Writers now use schema 9. Schemas 1–8 load and upgrade on the next save, preserving
+Outcome provenance introduced schema 9; current writers use
+[schema 10](device-topology-observations.md). Schemas 1–9 load and upgrade on the
+next save, preserving
 all evidence without inventing historical outcome times. A newly processed late
 outcome can record an actual processing time even for a legacy attempt whose
 start time is unavailable. Already retained historical results/completions and
@@ -56,9 +58,9 @@ known attempt start. The marker is checked before saves as well as on loads.
 The device-wide barrier remains derived from retained command history; it is not
 a second independently authoritative store.
 
-Older binaries reject schema 9. Drain senders and roll forward or use a reviewed
+Older binaries reject schema 10. Drain senders and roll forward or use a reviewed
 state migration; do not roll an older writer over upgraded snapshots. All actor
-saves use schema 9 even when reconciliation/projection are disabled. Storage
+saves use schema 10 even when reconciliation/projection are disabled. Storage
 backend, fencing and delivery guarantees are unchanged. History remains bounded
 and retained; no pruning or correction loop is added.
 
@@ -68,3 +70,7 @@ freshness, duplicate stability, completion/response ordering, acceptance versus
 completion, metadata inspection and schema downgrade rejection, plus an in-flight
 Get crossing a late outcome. Long infrastructure fault drills were not repeated
 for this actor-local state and eligibility change.
+
+Schema 10 also records a mutation observation cutoff covering all already-known
+readings. This may exceed the actual attempt/outcome time after clock rollback.
+The derived freshness boundary uses it without changing the historical event times.

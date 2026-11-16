@@ -125,6 +125,7 @@ func (a *Actor) HandleNotify(ctx context.Context, r device.DeviceNotification) (
 	}
 	// All notification classes are durable in this canary. No silent telemetry loss.
 	s.Inbox[mid] = fp
+	a.markTopologyChange(s, n, mid, fp, r.ReceivedAt)
 	if v := n.GetValueChange(); v != nil && a.managedObservation(v.ParamPath, v.ParamValue) {
 		old, exists := s.Reported[v.ParamPath]
 		if !exists || r.ReceivedAt.After(old.ReceivedAt) {
