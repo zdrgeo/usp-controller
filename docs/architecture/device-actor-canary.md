@@ -457,3 +457,12 @@ panic. The same budget is shared through runtime wiring and has label-free local
 metrics. See [scope and safety semantics](device-actor-attempt-budget.md). Zero or
 omission preserves the previous actor behavior. This is not a cluster-wide quota,
 response-in-flight cap or external-send fence. Legacy remains the default.
+
+### Deadline exhaustion during begin persistence
+
+The controller rechecks the persisted absolute deadline after a confirmed attempt
+begin save and before transport handoff. At or beyond that deadline it skips
+Publish and returns a deadline error. The saved attempt stays non-replayable and
+recovers as unknown on a later turn, including if the controller clock rolls back.
+Review it through the existing unknown-outcome workflow. This check does not
+revoke an already-entered transport operation or replace transport context checks.

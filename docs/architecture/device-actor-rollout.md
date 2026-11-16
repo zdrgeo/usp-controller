@@ -496,3 +496,22 @@ Writers now use schema 11. Schema-10 object and mutation cutoffs are preserved;
 older onboarding receipts do not acquire invented cutoffs on migration or retry.
 Older actor binaries reject upgraded state, so drain/roll forward or use a reviewed
 migration. Legacy remains the default; no backend or delivery protocol changes.
+
+### Deadline check after durable begin
+
+Tick now checks the accepted absolute command deadline again after a confirmed
+begin save and before entering transport. A slow save can consume the remaining
+lifetime; a transport implementation may queue before inspecting its context.
+When the controller clock is at or beyond the deadline, Tick returns a deadline
+error without calling Publish. No accepted deadline is extended.
+
+The durable attempt remains `attempting` and becomes `unknown` on a subsequent
+turn. It is never reset to queued, even if this invocation skipped transport or
+the clock later moves backwards. This preserves the single non-replayable attempt
+boundary and the existing operator review workflow. The check cannot revoke I/O
+already entered; transport dependencies must still enforce their contexts.
+
+Focused checks cover equality/overrun during the begin commit, retained attempt
+identity and restart recovery without publication after clock rollback. Legacy
+remains the default; schema 11, backend protocols and delivery guarantees are
+unchanged.

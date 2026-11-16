@@ -233,6 +233,13 @@ func (a *Actor) Tick(ctx context.Context) (resultErr error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	// The begin commit may consume the remaining lifetime. Never knowingly
+	// enter transport after the accepted deadline, even if that transport does
+	// not inspect its context before queueing. Keep the durable attempt for
+	// conservative unknown recovery, just as for post-begin cancellation.
+	if !a.opts.Now().Before(c.Deadline) {
+		return context.DeadlineExceeded
+	}
 	sendCtx, cancel := context.WithDeadline(ctx, c.Deadline)
 	sendCtx, stop := context.WithTimeout(sendCtx, 5*time.Second)
 	result, publishErr := a.transport.Publish(sendCtx, a.id, device.PublishAttempt{ID: c.MessageID, MessageID: c.MessageID, Message: msg, Deadline: c.Deadline})
