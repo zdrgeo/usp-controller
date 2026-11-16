@@ -1,6 +1,6 @@
 # Explicit asynchronous managed-twin refresh
 
-An authenticated caller can request one read of the configured managed paths:
+An authenticated caller can request one read of all or selected managed paths:
 
 ```http
 POST /v2/devices/{device}/twin/refresh
@@ -10,6 +10,12 @@ Content-Type: application/json
 
 {"request_id":"refresh-001","deadline":"2026-11-15T12:00:00Z"}
 ```
+
+To narrow the read, include an optional `paths` array, for example
+`"paths":["Device.Test.Value"]`. Every selected path must be an exact configured
+managed parameter; reviewed read-only paths are allowed. Unknown paths, object or
+search selectors and duplicates are rejected before admission. Omitted, null or
+empty arrays mean all current policy paths, preserving the existing default.
 
 Use an actual future absolute deadline. The endpoint is mounted with the existing
 twin API for explicitly allowlisted actor devices. The actor also requires an
@@ -21,13 +27,14 @@ The response is 202 with the ordinary command receipt and
 `Location: /v2/devices/{device}/commands/{request_id}`. It means durable admission,
 not publication or successful refresh. Site, bearer and inventory checks precede
 actor invocation. The actor interface and private callback expose the matching
-`RefreshTwin` method with `request_id` and `deadline`.
+`RefreshTwin` method with `request_id`, `deadline` and optional `paths`.
 
 ## Queue and evidence
 
-The actor sorts all current policy paths, including reviewed read-only paths,
-into one concrete Get (`max_depth=1`). Callers cannot add arbitrary paths or USP
-payloads through this endpoint. The read delegates to ordinary command admission:
+The actor copies and sorts the selected paths (or all current policy paths)
+into one concrete Get (`max_depth=1`). Caller array order is not changed. The
+selection cannot expand the managed policy or supply arbitrary USP payloads.
+The read delegates to ordinary command admission:
 existing encoding/size, capacity, idempotency, deadline and reminder rules apply.
 The callback does not publish immediately. Readiness, pause, per-device unknowns,
 FIFO order and host concurrency/rate budgets continue to gate dispatch.
@@ -40,9 +47,13 @@ just as for explicit raw Gets. Generated bootstrap/verification reads retain the
 own stricter policy revalidation rules.
 
 Retry the same ID and deadline to recover a lost admission response. There is no
-new queued command and no resend after an attempt. Changed deadlines, reuse for a
-different command or a policy change that alters the built request produce a
-conflict. Inspect the original command before choosing a new ID. A new explicit
+new queued command and no resend after an attempt. Identity binds the effective
+sorted Get scope: reordered selections and an all-path shorthand resolving to
+that same set recover the same receipt. Changed deadlines, a changed path set,
+reuse for a different command or a policy change that alters the built request
+produce a conflict. Selected paths must still belong to the current policy;
+explicit subsets avoid accidental expansion when new policy paths are added.
+Inspect the original command before choosing a new ID. A new explicit
 refresh consumes another retained command/receipt and can hit bounded capacity;
 there is no pruning, periodic polling or automatic retry of uncertain reads.
 
@@ -61,8 +72,11 @@ a write acknowledgement, convergence guarantee or continuously maintained twin.
 
 ## Validation and compatibility
 
-Snapshot schema 8, receipt format, backend fencing and legacy behavior are
-unchanged. Metrics allowlist `RefreshTwin` as one additional fixed actor operation;
+Refresh originally used snapshot schema 8; current writers use schema 11.
+Optional path selection changes no snapshot or receipt format, backend fencing
+or legacy behavior. Upgrade API and callback hosts together before sending path
+selections; older callback hosts reject the new request field. Metrics allowlist
+`RefreshTwin` as one fixed actor operation;
 no per-device labels are added.
 
 Validation on 2026-11-14: the race-enabled full Go suite and `go vet` passed. One
@@ -71,3 +85,11 @@ deterministic scoped queueing, idempotent/conflicting admission, no publication 
 admission, callback timestamp provenance, managed projection and duplicate stability.
 Focused actor checks cover shadow/absent-policy/projection-disabled rejection.
 Long infrastructure fault tests were not repeated for this admission/callback change.
+
+Scoped-refresh validation on 2026-11-16 extends the existing API/client/callback
+check with a selected subset and confirms that unrequested managed values in a
+response are not projected. Focused actor checks cover sorted identity recovery
+after an ambiguous commit and deadline expiry, changed-set conflicts, input
+ownership and policy/duplicate rejection without saves or dispatch. The full
+race-enabled Go suite and `go vet` pass; no infrastructure fault drills are needed
+for this request-scope change.

@@ -91,11 +91,14 @@ type DeviceTwin struct {
 	BlockingUnknown                   []RequestID
 }
 
-// RefreshTwinRequest requests one explicit read of the current managed policy.
+// RefreshTwinRequest requests one explicit read of all or selected managed paths.
 // It shares command identity, queueing and delivery semantics with raw Get.
 type RefreshTwinRequest struct {
 	RequestID RequestID `json:"request_id"`
 	Deadline  time.Time `json:"deadline"`
+	// Empty means all current policy paths. Selected paths must be unique and
+	// belong to that policy; order does not change effective command identity.
+	Paths []string `json:"paths,omitempty"`
 }
 
 // Same request ID and immutable content returns the original receipt. A changed

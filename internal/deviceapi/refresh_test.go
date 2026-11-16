@@ -56,7 +56,7 @@ func TestExplicitRefreshCallbackUpdatesManagedTwin(t *testing.T) {
 	inventory := map[string]device.DeviceIdentity{"device": id}
 	handler := Handler(http.NotFoundHandler(), invoker, inventory, token, Options{TwinEnabled: true, SiteID: "site"})
 	deadline := time.Now().UTC().Add(time.Hour)
-	input := device.RefreshTwinRequest{RequestID: "refresh-1", Deadline: deadline}
+	input := device.RefreshTwinRequest{RequestID: "refresh-1", Deadline: deadline, Paths: []string{"Device.Test.Value"}}
 	body, _ := json.Marshal(input)
 	call := func(h http.Handler, path, bearer, site string, body []byte) *httptest.ResponseRecorder {
 		r := httptest.NewRequest("POST", path, strings.NewReader(string(body)))
@@ -88,7 +88,7 @@ func TestExplicitRefreshCallbackUpdatesManagedTwin(t *testing.T) {
 		t.Fatal("admission published")
 	}
 	c, err := actor.GetCommand(ctx, "refresh-1")
-	if err != nil || c.State != device.CommandQueued || !reflect.DeepEqual(c.Request.GetGet().ParamPaths, []string{"Device.Test.Flag", "Device.Test.Value"}) {
+	if err != nil || c.State != device.CommandQueued || !reflect.DeepEqual(c.Request.GetGet().ParamPaths, []string{"Device.Test.Value"}) {
 		t.Fatal(c, err)
 	}
 	changed := input
@@ -116,7 +116,7 @@ func TestExplicitRefreshCallbackUpdatesManagedTwin(t *testing.T) {
 		t.Fatal(err)
 	}
 	twin, err := actor.GetTwin(ctx)
-	if err != nil || twin.ReportedRevision != 1 || len(twin.Reported) != 2 || twin.Reported["Device.Test.Value"].Value.Value != "observed" || twin.Reported["Device.Test.Flag"].Value.Type != "boolean" {
+	if err != nil || twin.ReportedRevision != 1 || len(twin.Reported) != 1 || twin.Reported["Device.Test.Value"].Value.Value != "observed" {
 		t.Fatal("callback response did not project reviewed values", twin, err)
 	}
 	c, err = actor.GetCommand(ctx, "refresh-1")

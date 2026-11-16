@@ -515,3 +515,18 @@ Focused checks cover equality/overrun during the begin commit, retained attempt
 identity and restart recovery without publication after clock rollback. Legacy
 remains the default; schema 11, backend protocols and delivery guarantees are
 unchanged.
+
+### Scoped explicit twin refresh
+
+RefreshTwin now accepts optional `paths` to select a bounded subset of reviewed
+managed parameters, including read-only paths. Omitted/empty selections preserve
+the all-policy default. The actor rejects unknown paths, selectors and duplicates,
+copies/sorts the selection and queues the same ordinary asynchronous Get as before.
+No immediate publication, polling or write retry is added.
+
+Effective sorted scope and deadline determine command identity: equivalent path
+orders recover the retained receipt, while changed scope conflicts. Response
+projection remains limited to requested and currently managed parameters. See
+[explicit refresh](device-twin-refresh.md) for policy-evolution and host-upgrade
+constraints. Legacy remains the default; schema 11 and backend protocols are
+unchanged.

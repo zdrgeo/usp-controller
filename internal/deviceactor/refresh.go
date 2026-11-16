@@ -18,9 +18,23 @@ func (a *Actor) RefreshTwin(ctx context.Context, r device.RefreshTwinRequest) (d
 	if !validExecutionID(r.RequestID) || r.Deadline.IsZero() {
 		return device.CommandReceipt{}, ErrInvalid
 	}
+	if len(r.Paths) > len(a.opts.Policy.Paths) {
+		return device.CommandReceipt{}, ErrInvalid
+	}
 	paths := make([]string, 0, len(a.opts.Policy.Paths))
-	for path := range a.opts.Policy.Paths {
-		paths = append(paths, path)
+	if len(r.Paths) == 0 {
+		for path := range a.opts.Policy.Paths {
+			paths = append(paths, path)
+		}
+	} else {
+		seen := make(map[string]bool, len(r.Paths))
+		for _, path := range r.Paths {
+			if _, allowed := a.opts.Policy.Paths[path]; !allowed || seen[path] {
+				return device.CommandReceipt{}, ErrInvalid
+			}
+			seen[path] = true
+			paths = append(paths, path)
+		}
 	}
 	sort.Strings(paths)
 	return a.EnqueueCommand(ctx, device.CommandRequest{ID: r.RequestID, Deadline: r.Deadline, Request: &usp.Request{ReqType: &usp.Request_Get{Get: &usp.Get{ParamPaths: paths, MaxDepth: 1}}}})
