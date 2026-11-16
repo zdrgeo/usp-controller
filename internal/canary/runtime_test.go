@@ -125,6 +125,7 @@ func TestCanaryAsyncEndToEnd(t *testing.T) {
 	defer sidecar.Close()
 	cfg := config.Config{EndpointID: "controller", ClientID: "client", Listen: "127.0.0.1:8080", Broker: "tls://localhost:8883", JournalPath: "events", JournalMaxBytes: 1 << 20, RequestTimeoutSeconds: 1, MaxPending: 10, QoS: 1, Agents: map[string]config.Agent{"device": {Topic: "device/topic", Inbox: "controller/device"}, "legacy": {Topic: "legacy/topic", Inbox: "controller/legacy"}}, ActorCanary: &config.ActorCanary{Enabled: true, EventPubsub: "events", EventTopic: "device-events", Tenant: "tenant", Devices: []string{"device"}, DaprURL: sidecar.URL, CallbackListen: "127.0.0.1:8081", LockPath: filepath.Join(t.TempDir(), "canary.lock")}}
 	cfg.ActorCanary.MaintenanceIntervalSeconds = 7
+	cfg.ActorCanary.ObservationFreshnessSeconds = 75
 	cfg.ActorCanary.ReminderRepairWorkers = 2
 	cfg.ActorCanary.EventExportsPerTurn = 2
 	cfg.ActorCanary.MaxConcurrentAttempts = 1
@@ -290,6 +291,11 @@ func TestCanaryAsyncEndToEnd(t *testing.T) {
 	}
 	if len(mqtt.sends) != 2 {
 		t.Fatal("missing NotifyResp")
+	}
+	twinBody, err := runtime.Client.Invoke(ctx, runtime.Devices["device"], "GetTwin", nil)
+	var twin device.DeviceTwin
+	if err != nil || json.Unmarshal(twinBody, &twin) != nil || twin.Reported["Device.X"].FreshUntil.Sub(twin.Reported["Device.X"].ReceivedAt) != 75*time.Second {
+		t.Fatal("configured observation freshness did not reach actor ingestion", string(twinBody), err)
 	}
 	secondNotify := proto.Clone(notify).(*usp.Msg)
 	secondNotify.Header.MsgId = "n-batch"

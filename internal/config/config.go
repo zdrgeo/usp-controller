@@ -58,27 +58,30 @@ func (f FleetProjection) Normalized() FleetProjection {
 const MaxReminderRepairWorkers = 16
 const DefaultMaintenanceIntervalSeconds = 10
 const MaxMaintenanceIntervalSeconds = 300
+const DefaultObservationFreshnessSeconds = 300
+const MaxObservationFreshnessSeconds = 86400
 
 type ActorCanary struct {
-	MaintenanceIntervalSeconds int                            `json:"maintenance_interval_seconds,omitempty"`
-	ReminderRepairWorkers      int                            `json:"reminder_repair_workers,omitempty"`
-	EventExportsPerTurn        int                            `json:"event_exports_per_turn,omitempty"`
-	DispatchWithEventBacklog   bool                           `json:"dispatch_with_event_backlog,omitempty"`
-	AttemptRatePerSecond       int                            `json:"attempt_rate_per_second,omitempty"`
-	AttemptRateBurst           int                            `json:"attempt_rate_burst,omitempty"`
-	MaxConcurrentAttempts      int                            `json:"max_concurrent_attempts,omitempty"`
-	CompletionReserve          *deviceactor.CompletionReserve `json:"completion_reserve,omitempty"`
-	Fleet                      *FleetProjection               `json:"fleet,omitempty"`
-	Twin                       *device.TwinPolicy             `json:"twin,omitempty"`
-	Replica                    *Replica                       `json:"replica,omitempty"`
-	EventPubsub                string                         `json:"event_pubsub"`
-	EventTopic                 string                         `json:"event_topic"`
-	Enabled                    bool                           `json:"enabled"`
-	Tenant                     string                         `json:"tenant"`
-	Devices                    []string                       `json:"devices"`
-	DaprURL                    string                         `json:"dapr_url"`
-	CallbackListen             string                         `json:"callback_listen"`
-	LockPath                   string                         `json:"lock_path"`
+	ObservationFreshnessSeconds int                            `json:"observation_freshness_seconds,omitempty"`
+	MaintenanceIntervalSeconds  int                            `json:"maintenance_interval_seconds,omitempty"`
+	ReminderRepairWorkers       int                            `json:"reminder_repair_workers,omitempty"`
+	EventExportsPerTurn         int                            `json:"event_exports_per_turn,omitempty"`
+	DispatchWithEventBacklog    bool                           `json:"dispatch_with_event_backlog,omitempty"`
+	AttemptRatePerSecond        int                            `json:"attempt_rate_per_second,omitempty"`
+	AttemptRateBurst            int                            `json:"attempt_rate_burst,omitempty"`
+	MaxConcurrentAttempts       int                            `json:"max_concurrent_attempts,omitempty"`
+	CompletionReserve           *deviceactor.CompletionReserve `json:"completion_reserve,omitempty"`
+	Fleet                       *FleetProjection               `json:"fleet,omitempty"`
+	Twin                        *device.TwinPolicy             `json:"twin,omitempty"`
+	Replica                     *Replica                       `json:"replica,omitempty"`
+	EventPubsub                 string                         `json:"event_pubsub"`
+	EventTopic                  string                         `json:"event_topic"`
+	Enabled                     bool                           `json:"enabled"`
+	Tenant                      string                         `json:"tenant"`
+	Devices                     []string                       `json:"devices"`
+	DaprURL                     string                         `json:"dapr_url"`
+	CallbackListen              string                         `json:"callback_listen"`
+	LockPath                    string                         `json:"lock_path"`
 }
 
 // MaintenancePeriod preserves the existing cadence when no override is supplied.
@@ -87,6 +90,17 @@ func (a ActorCanary) MaintenancePeriod() time.Duration {
 	seconds := a.MaintenanceIntervalSeconds
 	if seconds == 0 {
 		seconds = DefaultMaintenanceIntervalSeconds
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+// ObservationFreshness applies to new observations and Get projection windows;
+// changing configuration does not rewrite persisted observation expiry times.
+// Config.Validate must run before a nonzero configured duration is used.
+func (a ActorCanary) ObservationFreshness() time.Duration {
+	seconds := a.ObservationFreshnessSeconds
+	if seconds == 0 {
+		seconds = DefaultObservationFreshnessSeconds
 	}
 	return time.Duration(seconds) * time.Second
 }
@@ -191,6 +205,9 @@ func (c Config) Validate() error {
 		}
 	}
 	if a := c.ActorCanary; a != nil {
+		if a.ObservationFreshnessSeconds < 0 || a.ObservationFreshnessSeconds > MaxObservationFreshnessSeconds || (a.ObservationFreshnessSeconds != 0 && !a.Enabled) {
+			return fmt.Errorf("observation_freshness_seconds requires actor mode and 1–%d (or zero for default)", MaxObservationFreshnessSeconds)
+		}
 		if a.MaintenanceIntervalSeconds < 0 || a.MaintenanceIntervalSeconds > MaxMaintenanceIntervalSeconds || (a.MaintenanceIntervalSeconds != 0 && !a.Enabled) {
 			return fmt.Errorf("maintenance_interval_seconds requires actor mode and 1–%d (or zero for default)", MaxMaintenanceIntervalSeconds)
 		}

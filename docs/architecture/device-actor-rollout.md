@@ -579,3 +579,12 @@ paths still project, and the command retains its protocol outcome and full respo
 Duplicate responses still perform no projection or save. Focused checks cover both
 candidate orders, scope isolation, identical values and duplicate stability. Legacy
 remains the default; schema 11, request scope and storage protocols are unchanged.
+
+### Configurable observation freshness
+
+An enabled actor cohort can now configure `observation_freshness_seconds` for new
+observations and Get projection windows. Omitted/zero preserves five minutes;
+explicit values require 1–86,400 seconds. Persisted observation expiry times are
+not rewritten. See [freshness configuration](device-observation-freshness.md) for
+in-flight read behavior and coordinated rollout. Legacy remains the default;
+schema 11, accepted command deadlines and delivery protocols are unchanged.
