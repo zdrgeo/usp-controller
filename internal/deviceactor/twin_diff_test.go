@@ -63,6 +63,9 @@ func TestTwinDiffIsReadOnlyPolicyScopedAndValueFree(t *testing.T) {
 	if diff.Paths[1].HasObservation || diff.Paths[1].ReceivedAt != nil || !diff.Paths[0].HasObservation || diff.Paths[0].ReceivedAt == nil {
 		t.Fatal("incorrect observation metadata", diff)
 	}
+	if diff.Paths[2].FreshUntil == nil || !diff.Paths[2].FreshUntil.After(*now) || diff.Paths[4].FreshUntil == nil || !diff.Paths[4].FreshUntil.IsZero() {
+		t.Fatal("read freshness was confused with desired-write permission", diff)
+	}
 	raw, _ := json.Marshal(diff)
 	for _, secret := range []string{"SENSITIVE_TARGET", "SENSITIVE_OBSERVED", "INVALID_BOOLEAN", "Device.Hidden.Value", "Device.ReportOnly.Value", "expired-but-not-maintained"} {
 		if strings.Contains(string(raw), secret) {
@@ -147,6 +150,10 @@ func TestTwinDiffObservationOnlyCoverageAndLifecycleInvalidation(t *testing.T) {
 		}
 		if !reflect.DeepEqual(states, want) || !reflect.DeepEqual(paths, []string{"Device.Fresh.Value", "Device.Missing.Value", "Device.Retyped.Value", "Device.Stale.Value"}) {
 			t.Fatal(diff)
+		}
+		twin, err := a.GetTwin(ctx)
+		if err != nil || !twin.Reported["Device.Retyped.Value"].FreshUntil.IsZero() || twin.Reported["Device.Retyped.Value"].Value.Value != "SECRET_RETYPE" || diff.ObservationPaths[2].FreshUntil == nil || !diff.ObservationPaths[2].FreshUntil.IsZero() {
+			t.Fatal("invalid historical evidence appeared fresh or was erased", twin, diff, err)
 		}
 		status, err := a.GetStatus(ctx)
 		coverage := status.ObservationCoverage

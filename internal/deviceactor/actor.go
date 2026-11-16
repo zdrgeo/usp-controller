@@ -354,10 +354,8 @@ func (a *Actor) GetTwin(ctx context.Context) (device.DeviceTwin, error) {
 	now := a.opts.Now()
 	t.Convergence = a.convergenceAt(s, now)
 	for path, got := range t.Reported {
-		if got.ReceivedAt.After(now) || (!s.observationBarrier.IsZero() && !got.ReceivedAt.After(s.observationBarrier)) {
-			got.FreshUntil = time.Time{} // historical value remains visible, not fresh in this view
-			t.Reported[path] = got
-		}
+		got.FreshUntil = a.observationExpiry(s, path, now)
+		t.Reported[path] = got // Historical values remain; this decoded view is never saved.
 	}
 	for id, c := range s.Commands {
 		if c.Receipt.State == device.CommandUnknown {

@@ -55,8 +55,13 @@ free-form reasons are excluded. State precedence is:
 | `different` | A usable fresh observation differs from the desired value. |
 | `matching` | A usable fresh observation matches the desired value. |
 
-Future/mutation/topology-invalidated rows expose a zero `fresh_until`; other rows retain
-the observation's recorded expiry for context. Use the state, not that timestamp
+Invalid, future and mutation/topology-invalidated observations expose a zero
+`fresh_until`; other observations retain their recorded expiry for context. This
+also applies underneath a `policy_blocked` desired row: write permission does not
+invalidate otherwise usable read evidence, while an invalid observation cannot
+look fresh merely because that row's desired-write policy takes precedence.
+Full twin reads use the same effective expiry without rewriting stored evidence.
+Use the state, not that timestamp
 alone, to determine whether a row is usable. Empty desired state returns
 `paths:[]` and converged, preserving existing semantics. Observation-only rows do
 not affect desired convergence, authorize writes or schedule refreshes.

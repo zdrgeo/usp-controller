@@ -607,3 +607,17 @@ and configuration changes. Queued, non-Get and legacy commands without a pinned
 window omit it. The additive field is read-only and participates in command-list
 view consistency; see [command inspection](device-command-inspection.md#pinned-get-observation-expiry).
 Legacy remains the default; snapshot schema 12 and command execution are unchanged.
+
+### Consistent effective freshness in twin reads
+
+Full twin reads and value-free diff rows now use one observation-expiry view.
+Retained observations invalid under current type/value policy expose zero effective
+freshness, as future-dated and mutation/lifecycle-invalidated observations already
+do. Their historical value, type, receive time and persisted expiry remain intact;
+no read-side save or reported revision is introduced.
+
+Desired-write permission stays independent: a policy-blocked desired row can still
+have usable read evidence, but its precedence cannot hide an invalid observation's
+zero freshness. Existing policy-change and read-only diagnostic checks cover the
+views and unchanged stored snapshot. Legacy remains the default; schema 12 and
+command execution are unchanged.

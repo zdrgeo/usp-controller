@@ -44,14 +44,22 @@ func (a *Actor) observationPathState(s *snapshot, path string, now time.Time) st
 	return "fresh"
 }
 
-func observationDiff(s *snapshot, path, state string) device.TwinPathDiff {
+// Preserve stored expiry as historical context, but never expose unusable
+// evidence with apparent future freshness. Desired-write policy is independent.
+func (a *Actor) observationExpiry(s *snapshot, path string, now time.Time) time.Time {
+	switch a.observationPathState(s, path, now) {
+	case "invalid", "future", "mutation_invalidated", "topology_invalidated":
+		return time.Time{}
+	default:
+		return s.Reported[path].FreshUntil
+	}
+}
+
+func (a *Actor) observationDiff(s *snapshot, path, state string, now time.Time) device.TwinPathDiff {
 	row := device.TwinPathDiff{Path: path, State: state}
 	if got, ok := s.Reported[path]; ok {
 		row.HasObservation = true
-		at, until := got.ReceivedAt, got.FreshUntil
-		if state == "future" || state == "mutation_invalidated" || state == "topology_invalidated" {
-			until = time.Time{}
-		}
+		at, until := got.ReceivedAt, a.observationExpiry(s, path, now)
 		row.ReceivedAt, row.FreshUntil = &at, &until
 	}
 	return row
@@ -97,7 +105,7 @@ func (a *Actor) GetTwinDiff(ctx context.Context) (device.TwinDiff, error) {
 				continue
 			}
 		}
-		out.Paths = append(out.Paths, observationDiff(s, path, a.desiredPathState(s, path, want, now)))
+		out.Paths = append(out.Paths, a.observationDiff(s, path, a.desiredPathState(s, path, want, now), now))
 	}
 	// Policy paths without desired intent include read-only parameters and
 	// missing observations. Without policy, expose only retained reported paths.
@@ -120,7 +128,7 @@ func (a *Actor) GetTwinDiff(ctx context.Context) (device.TwinDiff, error) {
 		if _, desired := s.Desired[path]; desired {
 			continue
 		}
-		out.ObservationPaths = append(out.ObservationPaths, observationDiff(s, path, a.observationPathState(s, path, now)))
+		out.ObservationPaths = append(out.ObservationPaths, a.observationDiff(s, path, a.observationPathState(s, path, now), now))
 	}
 	sort.Slice(out.Paths, func(i, j int) bool { return out.Paths[i].Path < out.Paths[j].Path })
 	sort.Slice(out.ObservationPaths, func(i, j int) bool { return out.ObservationPaths[i].Path < out.ObservationPaths[j].Path })
