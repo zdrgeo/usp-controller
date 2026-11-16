@@ -13,6 +13,10 @@ current managed policy, request scope, type checks and mutation/lifecycle cutoff
 still apply. The expiry is not an accepted command deadline, response outcome or
 permission to retry; full command evidence can settle even when projection skips.
 
+Command details and metadata listings expose the retained timestamp as optional
+`observation_fresh_until`. Missing metadata is left absent; reads do not synthesize
+the compatibility fallback or substitute the accepted command deadline.
+
 All new Get begins record the window, including raw, scoped refresh, bootstrap and
 verification Gets and attempts begun while Get projection is disabled. Projection
 still requires its separate opt-in. Failed or ambiguous begin saves retain existing

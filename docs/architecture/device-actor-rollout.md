@@ -598,3 +598,12 @@ full evidence remain independent of projection. See [pinned windows](device-get-
 for schema-12 migration and the historical-attempt fallback. Schemas 1–11 preserve
 existing state without invented windows; older binaries reject upgraded state.
 Legacy remains the default, with no backend or delivery protocol changes.
+
+### Inspectable Get observation windows
+
+Command details and listings now expose optional `observation_fresh_until` from
+retained Get attempt metadata, preserving the original timestamp across restart
+and configuration changes. Queued, non-Get and legacy commands without a pinned
+window omit it. The additive field is read-only and participates in command-list
+view consistency; see [command inspection](device-command-inspection.md#pinned-get-observation-expiry).
+Legacy remains the default; snapshot schema 12 and command execution are unchanged.

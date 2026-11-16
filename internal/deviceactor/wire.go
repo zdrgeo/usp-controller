@@ -25,6 +25,7 @@ func (in CommandInput) Domain() (device.CommandRequest, error) {
 }
 
 type CommandOutput struct {
+	ObservationFreshUntil  *time.Time                     `json:"observation_fresh_until,omitempty"`
 	MutationOutcomeAt      *time.Time                     `json:"mutation_outcome_at,omitempty"`
 	AttemptedAt            *time.Time                     `json:"attempted_at,omitempty"`
 	AttemptSequence        uint64                         `json:"attempt_sequence,omitempty"`
@@ -45,7 +46,7 @@ type CommandOutput struct {
 }
 
 func commandOutput(c device.DeviceCommand) (CommandOutput, error) {
-	out := CommandOutput{AttemptSequence: c.AttemptSequence, UnknownAcknowledgement: c.UnknownAcknowledgement, VerificationRevision: c.VerificationRevision, ObservationRevision: c.ObservationRevision, DesiredRevision: c.DesiredRevision, RequestID: c.ID, Revision: c.Revision, State: c.State, Deadline: &c.Deadline, MessageID: c.MessageID, Reason: c.Reason, OperationKey: c.OperationKey}
+	out := CommandOutput{ObservationFreshUntil: c.ObservationFreshUntil, AttemptSequence: c.AttemptSequence, UnknownAcknowledgement: c.UnknownAcknowledgement, VerificationRevision: c.VerificationRevision, ObservationRevision: c.ObservationRevision, DesiredRevision: c.DesiredRevision, RequestID: c.ID, Revision: c.Revision, State: c.State, Deadline: &c.Deadline, MessageID: c.MessageID, Reason: c.Reason, OperationKey: c.OperationKey}
 	if !c.AttemptedAt.IsZero() {
 		at := c.AttemptedAt
 		out.AttemptedAt = &at

@@ -124,6 +124,11 @@ func TestExplicitRefreshCallbackUpdatesManagedTwin(t *testing.T) {
 	if err != nil || c.State != device.CommandSucceeded || got.ReceivedAt.IsZero() || got.Source != "usp-get-response" || !got.FreshUntil.Equal(c.AttemptedAt.Add(opts.Freshness)) {
 		t.Fatal("missing receipt-time provenance", c, got, err)
 	}
+	lookup, err := invoker.Invoke(ctx, id, "GetCommand", deviceactor.CommandLookup{RequestID: "refresh-1"})
+	var inspected deviceactor.CommandOutput
+	if err != nil || json.Unmarshal(lookup, &inspected) != nil || inspected.ObservationFreshUntil == nil || !inspected.ObservationFreshUntil.Equal(got.FreshUntil) {
+		t.Fatal("callback command read lost pinned observation expiry", string(lookup), err)
+	}
 	before := string(backend.state)
 	if _, err = invoker.Invoke(ctx, id, "HandleResponse", deviceactor.ResponseInput{Identity: id, Message: raw}); err != nil {
 		t.Fatal(err)

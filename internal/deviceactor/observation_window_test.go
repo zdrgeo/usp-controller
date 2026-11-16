@@ -55,8 +55,12 @@ func TestGetObservationWindowSurvivesFreshnessConfigurationChange(t *testing.T) 
 				t.Fatal("read freshness was re-anchored", twin)
 			}
 			settled, err := restarted.GetCommand(ctx, "read")
-			if err != nil || settled.State != device.CommandSucceeded || !proto.Equal(settled.Result, msg) || len(f.calls) != 1 {
+			if err != nil || settled.State != device.CommandSucceeded || !proto.Equal(settled.Result, msg) || len(f.calls) != 1 || settled.ObservationFreshUntil == nil || !settled.ObservationFreshUntil.Equal(started.Add(tc.initial)) {
 				t.Fatal("projection changed command outcome/evidence or replayed", settled, err)
+			}
+			page, err := restarted.ListCommands(ctx, device.CommandQuery{})
+			if err != nil || len(page.Commands) != 1 || page.Commands[0].ObservationFreshUntil == nil || !page.Commands[0].ObservationFreshUntil.Equal(*settled.ObservationFreshUntil) {
+				t.Fatal("command listing lost the pinned window", page, err)
 			}
 		})
 	}
@@ -113,5 +117,9 @@ func TestGetObservationWindowProvenanceAndLegacyUpgrade(t *testing.T) {
 	s, err = a.load(ctx)
 	if err != nil || s.Commands["read"].ObservationFreshUntil != nil {
 		t.Fatal("migration save invented historical configuration", s, err)
+	}
+	legacyView, err := a.GetCommand(ctx, "read")
+	if err != nil || legacyView.ObservationFreshUntil != nil {
+		t.Fatal("command read invented legacy expiry metadata", legacyView, err)
 	}
 }

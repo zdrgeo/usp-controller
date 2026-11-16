@@ -115,3 +115,27 @@ The restart-without-cursor instruction applies to command-list and
 execution, twin/diff or status reads. Shared access handling
 sets `Cache-Control: no-store` before handled successes and failures. This does
 not change mutation idempotency, dispatch or snapshot schema 9.
+
+## Pinned Get observation expiry
+
+Command details and metadata listings now optionally include
+`observation_fresh_until`, copied from the durable Get attempt window. It remains
+the original timestamp after restart, freshness configuration changes and command
+settlement. It is not recomputed using the current host's configuration or the
+command's accepted deadline.
+
+Absence means no pinned window is recorded: this includes queued commands,
+non-Get commands and historical attempts migrated without that metadata. Do not
+interpret absence as zero freshness or substitute the command deadline. The
+historical projection fallback is described in [Get windows](device-get-observation-window.md).
+An expired window can remain visible as historical command metadata; its presence
+does not establish that a response qualifies for projection or that the twin is
+fresh. Current policy, scope, attempt order and invalidation guards still apply.
+
+This is read-only response metadata. Existing command inputs do not accept it as
+caller-specified control. Metadata is part of the full command-list view hash;
+a cursor from a different visible metadata view conflicts and requires restarting
+pagination. Older responses can omit the field. Reads still perform no state save,
+reminder repair or device handoff. Snapshot schema 12 and legacy defaults remain
+unchanged. Existing window/restart, listing and API/callback checks verify the
+exposed timestamp and absence of invented legacy metadata.
