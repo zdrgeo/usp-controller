@@ -80,6 +80,8 @@ preventing dispatch, mutation invalidation, and the full API/client/callback pat
 with access checks and default-route absence. Long infrastructure fault drills
 were not repeated for this read/eligibility change.
 
-Schema 10 now exposes topology invalidation and effective mutation high-water
-cutoffs. See [topology observations](device-topology-observations.md) for atomicity,
+Schema 10 introduced topology invalidation and effective mutation high-water
+cutoffs. Current writers use schema 11, which also invalidates readings after
+OnBoardRequest using the same `topology_invalidated` state and
+`topology_barrier_at` field. See [topology observations](device-topology-observations.md) for atomicity,
 clock rollback and rollout limits; older binaries reject the new snapshot schema.

@@ -113,7 +113,7 @@ func TestUnknownAcknowledgementDurabilityAndNoReplay(t *testing.T) {
 			// Metadata cannot be smuggled into a pre-acknowledgement schema.
 			state := map[string]json.RawMessage{}
 			json.Unmarshal(b.state, &state)
-			if string(state["Schema"]) != "10" {
+			if string(state["Schema"]) != "11" {
 				t.Fatal("new semantics not versioned")
 			}
 			state["Schema"] = json.RawMessage(`3`)

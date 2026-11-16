@@ -96,7 +96,7 @@ func TestMutationOutcomeBarrierCommitsWithEvidenceAndDoesNotRefreshOnRetry(t *te
 				prior.Commands["mutation"] = legacy
 				b.state, _ = json.Marshal(prior)
 				migrated, err := restarted.load(ctx)
-				if err != nil || migrated.Schema != 10 || !migrated.Commands["mutation"].MutationOutcomeAt.IsZero() || len(migrated.Commands["mutation"].Result) == 0 {
+				if err != nil || migrated.Schema != 11 || !migrated.Commands["mutation"].MutationOutcomeAt.IsZero() || len(migrated.Commands["mutation"].Result) == 0 {
 					t.Fatal("schema-8 upgrade invented outcome time or lost evidence", migrated, err)
 				}
 				b.state = original

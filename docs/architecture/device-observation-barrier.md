@@ -75,3 +75,7 @@ checks allow newer usable observations.
 cutoff for concrete object creation/deletion. The combined freshness boundary
 uses both mutation and topology cutoffs; unsupported object selectors remain
 durable events without trusted projection.
+
+Schema 11 extends that same bounded cutoff to OnBoardRequest. It conservatively
+requires post-onboarding observations without asserting reset, rewriting desired
+state or changing command replay rules. Earlier-started Gets remain historical.

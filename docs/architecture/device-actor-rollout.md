@@ -163,9 +163,9 @@ Global site routing and value redaction remain future work. A fleet projection
 must be explicitly eventually consistent and must never claim to be the actor's
 current authoritative state.
 
-New saves use snapshot schema **10**, preserving schema 1/2/3/4/5/6/7/8/9 state on upgrade,
+New saves use snapshot schema **11**, preserving schema 1/2/3/4/5/6/7/8/9/10 state on upgrade,
 recording generated command provenance, audited operator acknowledgement of
-unknown outcomes and durable per-device execution control. See the [operator workflow](device-actor-canary.md#operator-acknowledgement-of-an-unknown-outcome). See [Get observations](device-get-observations.md) for durable attempt provenance and opt-in reported-twin updates. [Bounded observation reads](device-observation-reads.md) are separately opt-in. [Post-write verification reads](device-verification-reads.md) are also separately opt-in. [Mutation outcome times](device-mutation-outcomes.md) extend observation ordering. [Topology cutoffs](device-topology-observations.md) extend freshness invalidation. Older binaries reject schema 10; binary
+unknown outcomes and durable per-device execution control. See the [operator workflow](device-actor-canary.md#operator-acknowledgement-of-an-unknown-outcome). See [Get observations](device-get-observations.md) for durable attempt provenance and opt-in reported-twin updates. [Bounded observation reads](device-observation-reads.md) are separately opt-in. [Post-write verification reads](device-verification-reads.md) are also separately opt-in. [Mutation outcome times](device-mutation-outcomes.md) extend observation ordering. [Topology cutoffs](device-topology-observations.md) extend freshness invalidation. Older binaries reject schema 11; binary
 rollback over upgraded state is unsupported. Drain senders and use a reviewed
 state migration or roll forward. Merely clearing state can lose attempts and
 receipts and is not a rollback procedure. Existing bounded retention limitations
@@ -483,3 +483,16 @@ A focused check covers value-change and topology receipts after ambiguous saves,
 with both pending and exported events, plus immutable payloads, reminder failures
 and new-message time validation. Legacy remains the default; schema 10 and storage
 protocols are unchanged.
+
+### Onboarding-aware twin freshness
+
+OnBoardRequest now reuses the atomic receipt/outbox observation cutoff to invalidate
+older twin readings and earlier-started Gets. It is a conservative lifecycle hint,
+not proof of reboot/reset. No desired values, command deadlines, accepted scope or
+retry authorization change. A later allowed observation can refresh the twin;
+onboarding identity attributes remain event evidence rather than parameter facts.
+
+Writers now use schema 11. Schema-10 object and mutation cutoffs are preserved;
+older onboarding receipts do not acquire invented cutoffs on migration or retry.
+Older actor binaries reject upgraded state, so drain/roll forward or use a reviewed
+migration. Legacy remains the default; no backend or delivery protocol changes.

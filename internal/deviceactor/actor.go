@@ -143,7 +143,7 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &snapshot{Schema: 10, Execution: &device.ExecutionState{}, Identity: a.id, Desired: map[string]device.ParameterValue{}, Reported: map[string]device.Observation{}, Receipts: map[device.RequestID]receipt{}, Commands: map[device.RequestID]storedCommand{}}
+	s := &snapshot{Schema: 11, Execution: &device.ExecutionState{}, Identity: a.id, Desired: map[string]device.ParameterValue{}, Reported: map[string]device.Observation{}, Receipts: map[device.RequestID]receipt{}, Commands: map[device.RequestID]storedCommand{}}
 	s.Inbox = map[string]string{}
 	if len(b) == 0 {
 		return s, nil
@@ -155,7 +155,7 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 	if err = json.Unmarshal(b, s); err != nil {
 		return nil, fmt.Errorf("decode actor state: %w", err)
 	}
-	if (s.Schema >= 2 && s.Inbox == nil) || (s.Schema != 1 && s.Schema != 2 && s.Schema != 3 && s.Schema != 4 && s.Schema != 5 && s.Schema != 6 && s.Schema != 7 && s.Schema != 8 && s.Schema != 9 && s.Schema != 10) || s.Identity != a.id || s.Desired == nil || s.Reported == nil || s.Receipts == nil || s.Commands == nil {
+	if (s.Schema >= 2 && s.Inbox == nil) || (s.Schema != 1 && s.Schema != 2 && s.Schema != 3 && s.Schema != 4 && s.Schema != 5 && s.Schema != 6 && s.Schema != 7 && s.Schema != 8 && s.Schema != 9 && s.Schema != 10 && s.Schema != 11) || s.Identity != a.id || s.Desired == nil || s.Reported == nil || s.Receipts == nil || s.Commands == nil {
 		return nil, fmt.Errorf("unsupported or inconsistent actor state")
 	}
 	if len(s.Receipts) > a.opts.MaxReceipts || len(s.Commands) > a.opts.MaxCommands || len(s.Desired) > a.opts.MaxParameters || len(s.Reported) > a.opts.MaxParameters {
@@ -177,7 +177,7 @@ func (a *Actor) load(ctx context.Context) (*snapshot, error) {
 	if err := validateTopology(s, sourceSchema); err != nil {
 		return nil, err
 	}
-	s.Schema = 10 // upgrade on the next atomic save; older binaries must reject this state
+	s.Schema = 11 // upgrade on the next atomic save; older binaries must reject this state
 	if s.Inbox == nil {
 		s.Inbox = map[string]string{}
 	}

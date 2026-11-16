@@ -792,3 +792,13 @@ cover known readings across clock rollback at topology, mutation begin and outco
 boundaries. The whole tracked twin is invalidated conservatively without creating
 parameter facts or corrective writes. Schema 10 preserves old state without
 invented historical cutoffs; legacy remains the default.
+
+### Onboarding-aware twin freshness
+
+OnBoardRequest now also records the bounded device-wide observation cutoff with
+its notification receipt/outbox event. Historical readings and earlier-started Gets
+cannot establish fresh post-onboarding state. This does not assert reboot/reset,
+rebind identity from notification attributes or authorize command retries. Schema
+11 preserves schema-10 cutoffs and old receipts without inventing lifecycle history.
+See [observation invalidation](device-topology-observations.md). Legacy remains
+the default.

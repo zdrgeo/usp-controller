@@ -1,7 +1,7 @@
-# Observation invalidation after object changes
+# Observation invalidation after object changes and onboarding
 
-Device Actors now record an observation cutoff for concrete ObjectCreation and
-ObjectDeletion notifications. They already retained these messages as durable
+Device Actors now record an observation cutoff for concrete ObjectCreation,
+ObjectDeletion and OnBoardRequest notifications. They already retained these messages as durable
 events, but older twin readings could remain apparently fresh after a deletion
 or recreation. Legacy remains the default runtime.
 
@@ -10,7 +10,15 @@ or recreation. Legacy remains the default runtime.
 A concrete object path is a `Device.` object/instance path with a trailing dot;
 searches, wildcards and malformed selectors are not projected. Unsupported shapes
 still retain their full notification receipt and outbox event under the existing
-contract. Generic Event/OnBoard messages are not topology triggers in this slice.
+contract. Generic Event messages are not invalidation triggers in this slice.
+
+OnBoardRequest is a conservative lifecycle hint that invalidates the whole tracked
+twin. It does not prove a reboot or factory reset. Routing supplies the authenticated
+Device identity; OUI, serial number, product class and supported protocol versions
+are retained as event evidence, never used to rebind identity or create parameter
+observations. The existing topology marker uses kind `on_board_request` and root
+scope `Device.`. Value-free diff diagnostics retain `topology_invalidated` and
+`topology_barrier_at` for this lifecycle cutoff as well as object changes.
 
 For a concrete object notice, the actor atomically saves its notification receipt,
 full outbox event and latest topology cutoff. The cutoff links to that receipt's
@@ -61,27 +69,30 @@ itself does not count as a new parameter observation or advance ReportedRevision
 
 ## Schema and rollout
 
-Writers use schema 10. Schemas 1–9 load and upgrade on the next save without
-inventing historical topology or high-water cutoffs. Already exported notices and
+Writers use schema 11. Schema 10 introduced object cutoffs and mutation high-water
+cutoffs; schema 11 additionally permits the onboarding marker. Schemas 1–10 load
+and upgrade on the next save without inventing historical cutoffs. Existing
+schema-10 object and mutation cutoffs retain their provenance. Already exported notices and
 old duplicate callbacks cannot establish a missing historical cutoff. Acquire
 fresh evidence during a reviewed upgrade when prior event/observation ordering
 is unknown.
 
 One optional topology marker and optional per-command mutation cutoffs are stored
 in the existing bounded snapshot. The topology marker must reference a retained
-matching notification receipt and have a supported kind/path/time. Mutation
+matching notification receipt and have a supported kind/path/time. Onboarding
+requires schema 11 and the root scope; hiding it in schema 10 is rejected. Mutation
 cutoffs require mutating attempt/outcome provenance and cannot precede known
 attempt/outcome timestamps. Metadata hidden in an older schema is rejected before
 load/save. This is application consistency validation within the existing trusted
 snapshot, not a separate authority or protection against arbitrary history edits.
 
-Older binaries reject schema 10. Drain senders and roll forward or use a reviewed
+Older binaries reject schema 11. Drain senders and roll forward or use a reviewed
 state migration; all new actor saves use the version even without topology events.
 Snapshot byte limits/reserves continue to apply, so added metadata can reduce
 headroom. No extra backend commit, component, queue or delivery guarantee is added.
 
 Validation on 2026-11-16: the full race-enabled Go suite and `go vet` passed.
-Focused checks cover creation/deletion, failed/ambiguous atomic commits, cutoff
+Focused checks cover creation/deletion/onboarding, failed/ambiguous atomic commits, cutoff
 retention after export, duplicate stability, earlier-Get rejection and later
 refresh, clock rollback at topology/begin/outcome boundaries, receipt/schema
 validation and legacy upgrade without invented metadata. Long infrastructure fault
