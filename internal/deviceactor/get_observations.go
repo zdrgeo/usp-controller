@@ -80,7 +80,11 @@ func (a *Actor) projectGet(s *snapshot, c storedCommand, req *usp.Request, r dev
 	if r.ReceivedAt.After(s.LastContact) {
 		s.LastContact = r.ReceivedAt.UTC()
 	}
-	if (!s.observationBarrier.IsZero() && !c.AttemptedAt.After(s.observationBarrier)) || c.AttemptSequence == 0 || c.AttemptSequence != s.AttemptSequence || c.AttemptedAt.IsZero() || r.ReceivedAt.Before(c.AttemptedAt) || !now.Before(c.AttemptedAt.Add(a.opts.Freshness)) {
+	until := c.AttemptedAt.Add(a.opts.Freshness) // Legacy attempts have no pinned window.
+	if c.ObservationFreshUntil != nil {
+		until = *c.ObservationFreshUntil
+	}
+	if (!s.observationBarrier.IsZero() && !c.AttemptedAt.After(s.observationBarrier)) || c.AttemptSequence == 0 || c.AttemptSequence != s.AttemptSequence || c.AttemptedAt.IsZero() || r.ReceivedAt.Before(c.AttemptedAt) || !now.Before(until) {
 		return
 	}
 	values := map[string]device.ParameterValue{}
@@ -123,7 +127,7 @@ func (a *Actor) projectGet(s *snapshot, c storedCommand, req *usp.Request, r dev
 		if old, ok := s.Reported[path]; ok && !old.ReceivedAt.Before(c.AttemptedAt) {
 			continue
 		}
-		projected[path] = device.Observation{Value: value, ReceivedAt: r.ReceivedAt.UTC(), FreshUntil: c.AttemptedAt.Add(a.opts.Freshness), Source: "usp-get-response"}
+		projected[path] = device.Observation{Value: value, ReceivedAt: r.ReceivedAt.UTC(), FreshUntil: until, Source: "usp-get-response"}
 		changed = true
 	}
 	if changed && len(projected) <= a.opts.MaxParameters && s.ReportedRevision < math.MaxUint64 {

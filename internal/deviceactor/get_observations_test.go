@@ -138,6 +138,7 @@ func TestGetProjectionRejectsUnsafeObservationWindows(t *testing.T) {
 				for id, stored := range prior.Commands {
 					stored.AttemptSequence = 0
 					stored.AttemptedAt = time.Time{}
+					stored.ObservationFreshUntil = nil
 					prior.Commands[id] = stored
 				}
 				b.state, _ = json.Marshal(prior)
@@ -251,6 +252,7 @@ func TestAttemptProvenanceRejectsInconsistentSnapshots(t *testing.T) {
 				s.Schema = 5
 			case "missing-time":
 				c.AttemptedAt = time.Time{}
+				c.ObservationFreshUntil = nil
 			case "missing-sequence":
 				c.AttemptSequence = 0
 			case "history-gap":

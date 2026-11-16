@@ -213,6 +213,10 @@ func (a *Actor) Tick(ctx context.Context) (resultErr error) {
 	s.AttemptSequence++
 	c.AttemptSequence = s.AttemptSequence
 	c.AttemptedAt = attemptedAt
+	if request.GetGet() != nil {
+		until := attemptedAt.Add(a.opts.Freshness)
+		c.ObservationFreshUntil = &until
+	}
 	if err = transition(&c, device.CommandAttempting, ""); err != nil {
 		return err
 	}

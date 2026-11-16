@@ -45,7 +45,7 @@ recorded outcome time; it is not proof that no result or device effect exists.
 ## Schema and rollout
 
 Outcome provenance introduced schema 9; current writers use
-[schema 11](device-topology-observations.md). Schemas 1–10 load and upgrade on the
+[schema 12](device-get-observation-window.md). Schemas 1–11 load and upgrade on the
 next save, preserving
 all evidence without inventing historical outcome times. A newly processed late
 outcome can record an actual processing time even for a legacy attempt whose
@@ -58,9 +58,9 @@ known attempt start. The marker is checked before saves as well as on loads.
 The device-wide barrier remains derived from retained command history; it is not
 a second independently authoritative store.
 
-Older binaries reject schema 11. Drain senders and roll forward or use a reviewed
+Older binaries reject schema 12. Drain senders and roll forward or use a reviewed
 state migration; do not roll an older writer over upgraded snapshots. All actor
-saves use schema 11 even when reconciliation/projection are disabled. Storage
+saves use schema 12 even when reconciliation/projection are disabled. Storage
 backend, fencing and delivery guarantees are unchanged. History remains bounded
 and retained; no pruning or correction loop is added.
 

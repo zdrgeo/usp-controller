@@ -10,6 +10,8 @@ The existing explicit device allowlist and managed-path policy still apply.
 
 Every new command attempt records `attempted_at` and a monotonically increasing
 per-device `attempt_sequence` in the durable begin commit, before publication.
+New Get attempts also [pin their observation expiry](device-get-observation-window.md)
+in that commit; restarts use the saved window instead of replacement configuration.
 The deadline is checked again immediately before begin because export and other
 maintenance may have consumed time. Unknown outcomes retain their provenance.
 
@@ -58,13 +60,13 @@ does not backfill skipped values; obtain a new read instead.
 ## Schema and rollout
 
 Attempt provenance introduced schema 6; current writers use
-[schema 11](device-topology-observations.md). Schemas 1–10 load and upgrade on the next save without
+[schema 12](device-get-observation-window.md). Schemas 1–11 load and upgrade on the next save without
 inventing timestamps or sequences for historical attempts. Those attempts can
 still settle and retain evidence, but cannot refresh the twin. New attempt
 provenance is validated for sequence uniqueness, complete retained history and
 compatible command state. There is no automatic history pruning.
 
-Older binaries reject schema 11. Drain senders and roll forward or use a reviewed
+Older binaries reject schema 12. Drain senders and roll forward or use a reviewed
 state migration; do not roll an older writer over upgraded state. The schema
 change applies to actor saves even when projection is disabled. No storage
 backend, fencing or infrastructure recovery protocol changes in this slice.

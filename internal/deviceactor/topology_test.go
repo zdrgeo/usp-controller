@@ -182,7 +182,7 @@ func TestTopologyProvenanceValidationAndLegacyUpgrade(t *testing.T) {
 	legacy.TopologyBarrier = nil
 	b.state, _ = json.Marshal(legacy)
 	upgraded, err := a.load(ctx)
-	if err != nil || upgraded.Schema != 11 || upgraded.TopologyBarrier != nil || len(upgraded.Inbox) != 1 {
+	if err != nil || upgraded.Schema != 12 || upgraded.TopologyBarrier != nil || len(upgraded.Inbox) != 1 {
 		t.Fatal("legacy upgrade invented cutoff or lost receipt", upgraded, err)
 	}
 	b.state = original
@@ -235,7 +235,7 @@ func TestOnboardingCutoffSchemaCompatibility(t *testing.T) {
 	legacy.TopologyBarrier = nil // Previously exported onboarding events had no cutoff.
 	b.state, _ = json.Marshal(legacy)
 	s, err := a.load(ctx)
-	if err != nil || s.Schema != 11 || s.TopologyBarrier != nil || len(s.Inbox) != 1 {
+	if err != nil || s.Schema != 12 || s.TopologyBarrier != nil || len(s.Inbox) != 1 {
 		t.Fatal("schema-10 upgrade invented lifecycle evidence", s, err)
 	}
 	if r, err := a.HandleNotify(ctx, topologyNotification("onboard", "on_board_request", "", *now)); err != nil || !r.Duplicate {
@@ -255,7 +255,7 @@ func TestOnboardingCutoffSchemaCompatibility(t *testing.T) {
 	legacy.Schema = 10
 	b.state, _ = json.Marshal(legacy)
 	s, err = a.load(ctx)
-	if err != nil || s.Schema != 11 || s.TopologyBarrier.Kind != "object_deletion" || !s.TopologyBarrier.At.Equal(*now) {
+	if err != nil || s.Schema != 12 || s.TopologyBarrier.Kind != "object_deletion" || !s.TopologyBarrier.At.Equal(*now) {
 		t.Fatal("schema-10 object cutoff was not preserved", s, err)
 	}
 }

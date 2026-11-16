@@ -26,11 +26,12 @@ for the cohort, not a per-parameter rule.
 
 ## Configuration changes and retained evidence
 
-Restart serving hosts with consistent configuration. Drain command senders and
-resolve in-flight reads before changing the window: Get projection uses the
-current configured duration anchored to the original attempt start, so a change
-can alter whether a previously begun read qualifies. It never changes attempt
-identity or authorizes a resend.
+Restart serving hosts with consistent configuration. New Get attempts now
+[pin their window at durable begin](device-get-observation-window.md), so later
+configuration cannot extend or truncate them. Resolve legacy in-flight reads
+before changing freshness if their compatibility fallback is unsuitable: attempts
+without a pinned window still use the current duration anchored to their stored
+start. Configuration never changes attempt identity or authorizes a resend.
 
 Existing observations keep their persisted `fresh_until` across restart, config
 change, duplicate receipts and snapshot migration. Shortening the configured
@@ -39,7 +40,8 @@ For a shorter-window rollout, obtain fresh observations under the new configurat
 before resuming generated writes that must use that tighter bound. No timestamp
 rewrite, TTL migration or synthetic reported revision is performed.
 
-Snapshot schema 11, state backend and delivery protocols are unchanged. Direct
+Current writers use snapshot schema 12 for pinned Get windows; older binaries
+reject upgraded state. State backend and delivery protocols are unchanged. Direct
 actor users retain `Options.Freshness`; application configuration governs the
 canary runtime's option. Validation covers default preservation, bounds and legacy
 rejection, plus a configured notification through runtime/Dapr callbacks whose

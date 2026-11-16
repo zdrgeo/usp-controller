@@ -163,9 +163,9 @@ Global site routing and value redaction remain future work. A fleet projection
 must be explicitly eventually consistent and must never claim to be the actor's
 current authoritative state.
 
-New saves use snapshot schema **11**, preserving schema 1/2/3/4/5/6/7/8/9/10 state on upgrade,
+New saves use snapshot schema **12**, preserving schema 1/2/3/4/5/6/7/8/9/10/11 state on upgrade,
 recording generated command provenance, audited operator acknowledgement of
-unknown outcomes and durable per-device execution control. See the [operator workflow](device-actor-canary.md#operator-acknowledgement-of-an-unknown-outcome). See [Get observations](device-get-observations.md) for durable attempt provenance and opt-in reported-twin updates. [Bounded observation reads](device-observation-reads.md) are separately opt-in. [Post-write verification reads](device-verification-reads.md) are also separately opt-in. [Mutation outcome times](device-mutation-outcomes.md) extend observation ordering. [Topology cutoffs](device-topology-observations.md) extend freshness invalidation. Older binaries reject schema 11; binary
+unknown outcomes and durable per-device execution control. See the [operator workflow](device-actor-canary.md#operator-acknowledgement-of-an-unknown-outcome). See [Get observations](device-get-observations.md) for durable attempt provenance and opt-in reported-twin updates. [Bounded observation reads](device-observation-reads.md) are separately opt-in. [Post-write verification reads](device-verification-reads.md) are also separately opt-in. [Mutation outcome times](device-mutation-outcomes.md) extend observation ordering. [Topology cutoffs](device-topology-observations.md) extend freshness invalidation. Older binaries reject schema 12; binary
 rollback over upgraded state is unsupported. Drain senders and use a reviewed
 state migration or roll forward. Merely clearing state can lose attempts and
 receipts and is not a rollback procedure. Existing bounded retention limitations
@@ -588,3 +588,13 @@ explicit values require 1–86,400 seconds. Persisted observation expiry times a
 not rewritten. See [freshness configuration](device-observation-freshness.md) for
 in-flight read behavior and coordinated rollout. Legacy remains the default;
 schema 11, accepted command deadlines and delivery protocols are unchanged.
+
+### Durable Get observation windows
+
+New Get attempts now persist their observation expiry with durable begin, so a
+restart with longer or shorter freshness configuration cannot alter the begun
+read's projection window. Expiry equality remains stale; command outcomes and
+full evidence remain independent of projection. See [pinned windows](device-get-observation-window.md)
+for schema-12 migration and the historical-attempt fallback. Schemas 1–11 preserve
+existing state without invented windows; older binaries reject upgraded state.
+Legacy remains the default, with no backend or delivery protocol changes.

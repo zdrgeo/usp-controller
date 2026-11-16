@@ -69,8 +69,8 @@ itself does not count as a new parameter observation or advance ReportedRevision
 
 ## Schema and rollout
 
-Writers use schema 11. Schema 10 introduced object cutoffs and mutation high-water
-cutoffs; schema 11 additionally permits the onboarding marker. Schemas 1–10 load
+Current writers use [schema 12](device-get-observation-window.md). Schema 10 introduced object cutoffs and mutation high-water
+cutoffs; schema 11 additionally permits the onboarding marker. Schemas 1–11 load
 and upgrade on the next save without inventing historical cutoffs. Existing
 schema-10 object and mutation cutoffs retain their provenance. Already exported notices and
 old duplicate callbacks cannot establish a missing historical cutoff. Acquire
@@ -86,7 +86,7 @@ attempt/outcome timestamps. Metadata hidden in an older schema is rejected befor
 load/save. This is application consistency validation within the existing trusted
 snapshot, not a separate authority or protection against arbitrary history edits.
 
-Older binaries reject schema 11. Drain senders and roll forward or use a reviewed
+Older binaries reject schema 12. Drain senders and roll forward or use a reviewed
 state migration; all new actor saves use the version even without topology events.
 Snapshot byte limits/reserves continue to apply, so added metadata can reduce
 headroom. No extra backend commit, component, queue or delivery guarantee is added.
