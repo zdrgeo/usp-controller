@@ -31,3 +31,18 @@ func (a *Actor) twinPolicyFingerprint() (string, error) {
 		Freshness time.Duration
 	}{1, a.opts.Policy, a.opts.Freshness})
 }
+
+// Call only for new admission, after immutable receipt recovery.
+func (a *Actor) requireTwinPolicy(expected string) error {
+	if expected == "" {
+		return nil
+	}
+	current, err := a.twinPolicyFingerprint()
+	if err != nil {
+		return err
+	}
+	if current != expected {
+		return ErrConflict
+	}
+	return nil
+}

@@ -37,5 +37,5 @@ func (a *Actor) RefreshTwin(ctx context.Context, r device.RefreshTwinRequest) (d
 		}
 	}
 	sort.Strings(paths)
-	return a.EnqueueCommand(ctx, device.CommandRequest{ID: r.RequestID, Deadline: r.Deadline, Request: &usp.Request{ReqType: &usp.Request_Get{Get: &usp.Get{ParamPaths: paths, MaxDepth: 1}}}})
+	return a.EnqueueCommand(ctx, device.CommandRequest{ExpectedPolicyFingerprint: r.ExpectedPolicyFingerprint, ID: r.RequestID, Deadline: r.Deadline, Request: &usp.Request{ReqType: &usp.Request_Get{Get: &usp.Get{ParamPaths: paths, MaxDepth: 1}}}})
 }

@@ -34,11 +34,18 @@ func TestRefreshScopeAdmissionAndReceiptRecovery(t *testing.T) {
 	a.opts.Policy.ObserveGetResponses = true
 	a.opts.Policy.Paths = map[string]device.ManagedPath{"Device.Test.Value": {Type: "string", Writable: true}, "Device.Test.Flag": {Type: "boolean"}} // Read-only paths are eligible.
 	r := device.RefreshTwinRequest{RequestID: "refresh", Deadline: now.Add(time.Hour), Paths: []string{"Device.Test.Value", "Device.Test.Flag"}}
+	status, err := a.GetStatus(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.ExpectedPolicyFingerprint = status.TwinPolicyFingerprint
 	b.ambiguous = true
 	if _, err := a.RefreshTwin(ctx, r); err == nil {
 		t.Fatal("ambiguous admission reported success")
 	}
-	restarted, err := NewExecuting(identity, b, a.opts, f)
+	opts := a.opts
+	opts.Freshness += time.Second
+	restarted, err := NewExecuting(identity, b, opts, f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,6 +64,17 @@ func TestRefreshScopeAdmissionAndReceiptRecovery(t *testing.T) {
 	}
 	if r.Paths[0] != "Device.Test.Value" {
 		t.Fatal("admission reordered caller input")
+	}
+	unguarded := r
+	unguarded.ExpectedPolicyFingerprint = ""
+	if _, err := restarted.RefreshTwin(ctx, unguarded); !errors.Is(err, ErrConflict) {
+		t.Fatal("guard was removed from immutable request identity", err)
+	}
+	stale := r
+	stale.RequestID = "new-stale-policy"
+	stale.Deadline = now.Add(time.Hour)
+	if _, err := restarted.RefreshTwin(ctx, stale); !errors.Is(err, ErrConflict) {
+		t.Fatal("stale policy admitted a new refresh", err)
 	}
 	changed := r
 	changed.Paths = []string{"Device.Test.Value"}

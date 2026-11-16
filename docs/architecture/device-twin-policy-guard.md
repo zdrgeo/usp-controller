@@ -1,4 +1,4 @@
-# Optional managed-policy guard for desired admission
+# Optional managed-policy guards for actor admission
 
 Actor status now exposes optional `twin_policy_fingerprint`. It is a canonical
 SHA-256 digest of the managed-twin policy and effective observation freshness,
@@ -18,9 +18,31 @@ returns conflict (HTTP 409); malformed tokens return invalid (HTTP 400). Desired
 revision compare-and-set, current path permissions and existing access checks
 still apply. Omitting the field preserves existing admission behavior.
 
+## Explicit commands and twin refresh
+
+The same optional `expected_policy_fingerprint` is accepted by command POST and
+twin-refresh POST. The public command DTO and private callback carry it to actor
+admission. For new commands, the actor validates the token against current policy
+after immutable receipt lookup and before creating queue intent. A matching token
+does not restrict or expand the raw command's protocol scope: that endpoint remains
+the existing operator interface, not managed-path authorization.
+
+Command receipt identity includes the guard alongside deterministic protocol
+payload and absolute deadline. Removing or changing a nonempty guard under the
+same command ID conflicts. Unguarded historical payload/deadline fingerprints
+remain unchanged. Identical command retries can recover their existing receipt
+after policy changes or deadline expiry without sending or rewriting state.
+
+Refresh forwards its guard with the normalized scoped Get. It still constructs
+scope under current policy before ordinary command receipt lookup. Path withdrawal
+can reject a selection, and all-path policy changes can alter the built Get and
+conflict with an old receipt. The guard does not reconstruct historical refresh
+scope or bypass projection prerequisites; inspect the retained command in those
+cases. Equivalent reordered paths retain the existing normalized identity rules.
+
 ## Receipt recovery and scope
 
-The expected token is immutable request content. An identical retry recovers its
+The expected token is immutable request content. An identical desired retry recovers its
 original receipt even if current policy, freshness or desired revision has since
 changed. It repairs the reminder but never reapplies old values. Changing or
 removing the guard under the same request ID conflicts. Unguarded historical
@@ -47,3 +69,8 @@ API and private callback, receipt recovery after lost commit replies and policy
 withdrawal, historical request-fingerprint compatibility, immutable desired
 revisions versus policy identity, and optional digest persistence in the fleet
 cache. No infrastructure fault drills are repeated for this admission-only change.
+
+Command/refresh extension checks also cover forwarding through the real canary
+API/callback path, refresh receipt recovery after a configuration change, removal
+of an immutable guard and historical command fingerprint compatibility. No
+dispatch, retry, queued-scope or persisted Get-window behavior changes.

@@ -168,6 +168,12 @@ func TestCanaryAsyncEndToEnd(t *testing.T) {
 		return w
 	}
 	request := deviceactor.CommandInput{RequestID: "cmd-1", Deadline: time.Now().Add(time.Minute).UTC(), Request: json.RawMessage(`{"get":{"paramPaths":["Device.DeviceInfo."]}}`)}
+	request.ExpectedPolicyFingerprint = strings.Repeat("0", 64)
+	guardedBody, _ := json.Marshal(request)
+	if w := call("POST", "/v2/devices/device/commands", guardedBody, apiToken); w.Code != 409 {
+		t.Fatal("policy guard did not reach command admission", w.Code, w.Body.String())
+	}
+	request.ExpectedPolicyFingerprint = ""
 	body, _ := json.Marshal(request)
 	if w := call("POST", "/v2/devices/device/commands", body, "wrong"); w.Code != 401 {
 		t.Fatal(w.Code)

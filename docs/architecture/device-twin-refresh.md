@@ -70,6 +70,14 @@ is already enabled, newly usable observations can make an existing desired
 revision eligible for its bounded managed Set on a later reminder. Refresh is not
 a write acknowledgement, convergence guarantee or continuously maintained twin.
 
+Refresh also accepts optional `expected_policy_fingerprint` from actor status.
+For new admission it must match the current managed policy/freshness token. It is
+part of immutable command identity; omitting it preserves historical unguarded
+receipt encoding. Scope normalization and current path checks still precede
+command receipt lookup, so this does not recover historical scope after policy
+withdrawal. See [policy guards](device-twin-policy-guard.md) for details. It does
+not freeze policy for later dispatch or replace projection guards.
+
 ## Validation and compatibility
 
 Refresh originally used snapshot schema 8; current writers use schema 11.

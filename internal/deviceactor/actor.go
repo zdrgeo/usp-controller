@@ -430,14 +430,8 @@ func (a *Actor) SetDesired(ctx context.Context, r device.SetDesiredRequest) (dev
 		}
 		return device.DesiredReceipt{ID: r.ID, Revision: prior.Revision}, nil
 	}
-	if r.ExpectedPolicyFingerprint != "" {
-		current, err := a.twinPolicyFingerprint()
-		if err != nil {
-			return zero, err
-		}
-		if current != r.ExpectedPolicyFingerprint {
-			return zero, ErrConflict
-		}
+	if err := a.requireTwinPolicy(r.ExpectedPolicyFingerprint); err != nil {
+		return zero, err
 	}
 	// An immutable receipt recovers prior admission; current policy applies only
 	// to new intent and must not make old retries reapply or lose that receipt.
@@ -548,6 +542,9 @@ func (a *Actor) EnqueueCommand(ctx context.Context, r device.CommandRequest) (de
 	if r.ID == "" || strings.HasPrefix(string(r.ID), "reconcile-") || r.Deadline.IsZero() {
 		return zero, ErrInvalid
 	}
+	if r.ExpectedPolicyFingerprint != "" && !ValidTwinPolicyFingerprint(r.ExpectedPolicyFingerprint) {
+		return zero, ErrInvalid
+	}
 	if _, err := protocol.RequestType(r.Request); err != nil {
 		return zero, fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
@@ -568,9 +565,10 @@ func (a *Actor) EnqueueCommand(ctx context.Context, r device.CommandRequest) (de
 	}
 	r.Deadline = r.Deadline.UTC()
 	fp, err := fingerprint(struct {
-		Payload  []byte
-		Deadline time.Time
-	}{payload, r.Deadline})
+		Payload                   []byte
+		Deadline                  time.Time
+		ExpectedPolicyFingerprint string `json:",omitempty"`
+	}{payload, r.Deadline, r.ExpectedPolicyFingerprint})
 	if err != nil {
 		return zero, err
 	}
@@ -587,6 +585,9 @@ func (a *Actor) EnqueueCommand(ctx context.Context, r device.CommandRequest) (de
 			return zero, err
 		}
 		return s.Commands[r.ID].Receipt, nil
+	}
+	if err := a.requireTwinPolicy(r.ExpectedPolicyFingerprint); err != nil {
+		return zero, err
 	}
 	if !r.Deadline.After(a.opts.Now()) {
 		return zero, ErrInvalid

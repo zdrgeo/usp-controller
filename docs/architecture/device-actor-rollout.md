@@ -632,3 +632,14 @@ changes; unguarded historical request fingerprints are preserved. See the
 [policy guard](device-twin-policy-guard.md) for its admission-only scope and rollout
 compatibility. Legacy remains the default; schema 12 and execution semantics are
 unchanged.
+
+### Policy guards for explicit commands and refresh
+
+Command POST and twin-refresh POST now accept the same optional
+`expected_policy_fingerprint` admission guard as desired PATCH. New commands
+conflict with stale policy context; identical retained command receipts recover
+before that check. Guard identity is immutable, and empty guards preserve old
+payload/deadline receipt fingerprints. Refresh keeps its existing current-policy
+scope normalization and projection prerequisites. See [policy guards](device-twin-policy-guard.md#explicit-commands-and-twin-refresh).
+Legacy remains the default; schema 12, queued execution scope and retry semantics
+are unchanged.

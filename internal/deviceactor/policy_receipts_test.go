@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"example.com/usp-controller/internal/device"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestDesiredReceiptRecoverySurvivesPolicyWithdrawalWithoutReapplyingIntent(t *testing.T) {
@@ -176,5 +177,39 @@ func TestDesiredPolicyFingerprintGuardsNewIntentAndPreservesLegacyReceipts(t *te
 	unchanged, err := restarted.GetStatus(ctx)
 	if err != nil || unchanged.TwinPolicyFingerprint != current.TwinPolicyFingerprint {
 		t.Fatal("desired state changed policy identity", unchanged, err)
+	}
+}
+
+func TestOptionalCommandGuardPreservesHistoricalReceiptEncoding(t *testing.T) {
+	a, b, _, now := executable(t)
+	r := command("historical", now.Add(time.Hour))
+	if _, err := a.EnqueueCommand(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(r.Request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldFP, err := fingerprint(struct {
+		Payload  []byte
+		Deadline time.Time
+	}{payload, r.Deadline.UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := a.load(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prior := s.Receipts[r.ID]
+	prior.Fingerprint = oldFP
+	s.Receipts[r.ID] = prior
+	b.state, _ = json.Marshal(s)
+	*now = r.Deadline.Add(time.Second)
+	before, saves := string(b.state), b.saves
+	b.failSave = true
+	got, err := a.EnqueueCommand(ctx, r)
+	if err != nil || got.ID != r.ID || got.Revision != 1 || b.saves != saves || string(b.state) != before {
+		t.Fatal("new guard field stranded a historical command receipt", got, err)
 	}
 }

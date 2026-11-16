@@ -11,9 +11,10 @@ import (
 
 // Wire DTOs use protobuf JSON explicitly; encoding/json cannot round-trip oneofs.
 type CommandInput struct {
-	RequestID device.RequestID `json:"request_id"`
-	Deadline  time.Time        `json:"deadline"`
-	Request   json.RawMessage  `json:"request"`
+	ExpectedPolicyFingerprint string           `json:"expected_policy_fingerprint,omitempty"`
+	RequestID                 device.RequestID `json:"request_id"`
+	Deadline                  time.Time        `json:"deadline"`
+	Request                   json.RawMessage  `json:"request"`
 }
 
 func (in CommandInput) Domain() (device.CommandRequest, error) {
@@ -21,7 +22,7 @@ func (in CommandInput) Domain() (device.CommandRequest, error) {
 	if err := protojson.Unmarshal(in.Request, req); err != nil {
 		return device.CommandRequest{}, ErrInvalid
 	}
-	return device.CommandRequest{ID: in.RequestID, Deadline: in.Deadline, Request: req}, nil
+	return device.CommandRequest{ExpectedPolicyFingerprint: in.ExpectedPolicyFingerprint, ID: in.RequestID, Deadline: in.Deadline, Request: req}, nil
 }
 
 type CommandOutput struct {

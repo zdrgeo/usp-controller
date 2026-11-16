@@ -94,8 +94,9 @@ type DeviceTwin struct {
 // RefreshTwinRequest requests one explicit read of all or selected managed paths.
 // It shares command identity, queueing and delivery semantics with raw Get.
 type RefreshTwinRequest struct {
-	RequestID RequestID `json:"request_id"`
-	Deadline  time.Time `json:"deadline"`
+	ExpectedPolicyFingerprint string    `json:"expected_policy_fingerprint,omitempty"`
+	RequestID                 RequestID `json:"request_id"`
+	Deadline                  time.Time `json:"deadline"`
 	// Empty means all current policy paths. Selected paths must be unique and
 	// belong to that policy; order does not change effective command identity.
 	Paths []string `json:"paths,omitempty"`
@@ -122,9 +123,10 @@ type DesiredReceipt struct {
 
 // CommandRequest policy is selected by the application, never a caller retry flag.
 type CommandRequest struct {
-	ID       RequestID
-	Request  *usp.Request
-	Deadline time.Time
+	ExpectedPolicyFingerprint string `json:",omitempty"`
+	ID                        RequestID
+	Request                   *usp.Request
+	Deadline                  time.Time
 }
 type CommandState string
 
