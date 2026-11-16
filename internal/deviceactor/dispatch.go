@@ -60,6 +60,9 @@ func transition(c *storedCommand, state device.CommandState, reason string) erro
 func (a *Actor) Tick(ctx context.Context) (resultErr error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	s, err := a.load(ctx)
 	if err != nil {
 		return err
@@ -105,6 +108,9 @@ func (a *Actor) Tick(ctx context.Context) (resultErr error) {
 		// Preserve the export error even if command work succeeds or adds another failure.
 		defer func() { resultErr = errors.Join(exportErr, resultErr) }()
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if a.transport == nil || s.Execution.Paused {
 		return nil
 	}
@@ -115,6 +121,9 @@ func (a *Actor) Tick(ctx context.Context) (resultErr error) {
 	}
 	if ready, ok := a.transport.(interface{ Ready() bool }); ok && !ready.Ready() {
 		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if len(s.Queue) == 0 {
 		if err = a.scheduleReconciliation(ctx, s); err != nil {
@@ -197,6 +206,10 @@ func (a *Actor) Tick(ctx context.Context) (resultErr error) {
 	if _, err = protocol.Encode(a.id.ControllerID, a.id.AgentID, msg); err != nil {
 		return err
 	}
+	// Cancellation gates the durable begin even when no host budget is configured.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	s.AttemptSequence++
 	c.AttemptSequence = s.AttemptSequence
 	c.AttemptedAt = attemptedAt
@@ -209,6 +222,11 @@ func (a *Actor) Tick(ctx context.Context) (resultErr error) {
 	if err = a.saveOrdinary(ctx, s); err != nil {
 		return err
 	} // no send after an ambiguous begin commit
+	// A confirmed begin is not rolled back. If cancellation won this boundary,
+	// leave attempting for conservative unknown recovery without calling transport.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	sendCtx, cancel := context.WithDeadline(ctx, c.Deadline)
 	sendCtx, stop := context.WithTimeout(sendCtx, 5*time.Second)
 	result, publishErr := a.transport.Publish(sendCtx, a.id, device.PublishAttempt{ID: c.MessageID, MessageID: c.MessageID, Message: msg, Deadline: c.Deadline})

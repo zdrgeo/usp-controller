@@ -430,3 +430,31 @@ Focused checks cover ambiguous admission, later revisions, withdrawn/read-only/
 retyped paths, full receipt budgets, immutable-body conflicts, report-clock rollback
 and rejection of new disallowed/future input without state changes. Legacy remains
 the default; schema 9, receipt fingerprints and dispatch semantics are unchanged.
+
+## Cancellation at command attempt boundaries
+
+Tick now checks cancellation at entry, after event export/readiness, immediately
+before durable begin and after a confirmed begin before transport handoff. These
+checks apply even when optional host attempt budgets are absent. Work already
+completed during maintenance or confirmed event removal is not rolled back.
+
+Cancelling a Tick context is not queued-command cancellation. If begin has not
+committed, accepted intent remains queued and can be considered on a later active
+turn under its existing deadline/policy. If begin committed before cancellation
+was observed, the actor skips a new handoff but retains durable `attempting` for
+conservative unknown recovery on the next turn. It does not reset the command to
+queued or replay it, even if transport was not called in that invocation. Existing
+operator unknown review remains the recovery workflow.
+
+These checks do not revoke already-entered backend/transport operations or promise
+a distributed abort; dependencies still must honor the supplied context. No
+detached write is added to persist a cancellation outcome. Acquired local permits
+are released on return, while consumed rate reservations remain nonrefundable.
+Snapshot schema 9, delivery semantics and legacy defaults are unchanged.
+
+Validation on 2026-11-16: the full race-enabled Go suite and `go vet` passed.
+Focused checks cover cancellation before a turn, after readiness, after confirmed
+event export and after a confirmed begin, without optional budgets. They verify
+unchanged queued intent before begin, no new handoff afterward, preserved attempt
+identity and unknown recovery without replay. Long infrastructure fault drills
+were not repeated for this local boundary check.

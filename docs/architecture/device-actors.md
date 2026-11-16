@@ -773,3 +773,11 @@ policy and time/revision checks; changed retry content conflicts. Recovery does
 not reapply historical values, overwrite newer state or refresh observations,
 including after controller clock rollback. Existing access and scheduling gates
 remain. Legacy, receipt format and snapshot schema 9 are unchanged.
+
+### Cancellation-aware attempt boundaries
+
+Tick now gates durable begin and transport handoff on its context independently
+of optional host budgets. A pre-begin cancellation leaves accepted intent queued;
+a post-begin cancellation retains the attempt for non-replayable unknown recovery.
+Completed maintenance/export work is not undone, and already-entered I/O cannot
+be revoked by a later check. Legacy and snapshot schema 9 remain unchanged.
